@@ -42,20 +42,14 @@ export const inReceivingTaskScope = (
   t: Pick<DeskTask, 'desk' | 'region'>,
   m: Member,
 ) =>
-  isManager(m)
-    ? !isScopedManager(m) || t.region === m.region
-    : t.desk === deskOf(m.role) &&
-      (m.region === '全部分部' ||
-        t.region === '全部分部' ||
-        t.region === m.region);
+  isManager(m) || t.desk === deskOf(m.role);
 export const inTaskScope = (
-  t: Pick<DeskTask, 'desk' | 'region'> & Partial<Pick<DeskTask, 'createdBy'>>,
+  t: Pick<DeskTask, 'desk' | 'region'> & Partial<Pick<DeskTask, 'createdBy' | 'assigneeId'>>,
   m: Member,
 ) =>
-  inReceivingTaskScope(t, m) ||
+  (inReceivingTaskScope(t, m) && (isManager(m) || t.assigneeId === m.id)) ||
   (m.role === 'sales' &&
-    t.createdBy === m.id &&
-    (m.region === '全部分部' || t.region === m.region));
+    t.createdBy === m.id);
 export const canManageTask = (t: DeskTask, m: Member) =>
   inTaskScope(t, m) &&
   (isManager(m) || (m.role === 'sales' && t.createdBy === m.id));

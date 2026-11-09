@@ -1,6 +1,9 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
+import { existsSync, readFileSync } from "node:fs";
+const hostingPath = new URL("./.openai/hosting.json", import.meta.url);
+const hostingConfig: {d1?: string; r2?: string} = existsSync(hostingPath)
+  ? JSON.parse(readFileSync(hostingPath, "utf8")) : {};
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
 import { connectorPreview } from "./build/connector-preview-plugin.mjs";

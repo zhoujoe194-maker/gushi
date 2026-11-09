@@ -1,3 +1,4 @@
+import { taskAccessible } from '../../server/resource-access';
 import {canViewSupplier} from '../../finance-operations';
 import { hasDesk } from '../../access';
 import { z } from 'zod';
@@ -31,6 +32,7 @@ import {
   visibleProject,
   isScopedManager,
   FINANCE_FACTS,
+  salesCommercial,
   canViewFact,
 } from '../../team';
 import { workflowChanges, workflowOf, EMPTY_WORKFLOW } from '../../workflow';
@@ -147,12 +149,12 @@ export async function GET(req: Request) {
     const summaryBooks: Record<string, FinanceBook> = {};
     for (const p of projects) {
       const row = books.results.find((b) => b.project_id === p.id);
-      summaryBooks[p.id] = row ? JSON.parse(row.data) : emptyBook(p.id);
+      summaryBooks[p.id] = canViewFinance(ctx.member) && row ? JSON.parse(row.data) : emptyBook(p.id);
     }
     const linkages = linkageSummary(
       projects,
       summaryBooks,
-      taskRows.results.map((r) => JSON.parse(r.data) as DeskTask),
+      taskRows.results.map((r) => JSON.parse(r.data) as DeskTask).filter(t => taskAccessible(t, ctx, ids)),
     );
     return response({
       projects,
@@ -276,7 +278,10 @@ export async function POST(req: Request) {
           '当前岗位不能编辑销售项目，请通过协作事项反馈',
         );
       if (parsed.execution === undefined) parsed.execution = before.execution;
-      if (!canViewFinance(ctx.member) && parsed.commercial !== undefined) throw new HttpError(403, '当前岗位不能修改商务报价');
+      if (!canViewFinance(ctx.member) && parsed.commercial !== undefined) {
+        if (JSON.stringify(parsed.commercial) !== JSON.stringify(salesCommercial(before.commercial))) throw new HttpError(403, '当前岗位不能修改商务报价');
+        parsed.commercial = before.commercial;
+      }
       if (parsed.commercial === undefined) parsed.commercial = before.commercial;
       if (!parsed.workflow && before.workflow)
         parsed.workflow = visibleProject(before, ctx.member).workflow;
@@ -304,7 +309,7 @@ export async function POST(req: Request) {
       if (parsed.workflow.tasks.some((t) => hidden.some((h) => h.id === t.id)))
         throw new HttpError(403, '不能访问其他工作台任务');
       parsed.workflow.tasks = [...parsed.workflow.tasks, ...hidden];
-      for (const key of new Set([...FINANCE_FACTS, ...Object.keys(workflowOf(before).facts)])) {
+      for (const key of new Set([...FINANCE_FACTS, ...Object.keys(workflowOf(before).facts), ...Object.keys(parsed.workflow.facts)])) {
         if (canViewFact(ctx.member, key)) continue;
         if (Object.hasOwn(parsed.workflow.facts, key))
           throw new HttpError(403, '当前岗位不能访问财务核对记录');

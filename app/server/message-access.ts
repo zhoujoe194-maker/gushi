@@ -1,4 +1,5 @@
 import { Context, HttpError } from './auth';
+import { loadProject } from './projects';
 import { myMessageKeys } from '../message-model';
 export type ThreadRow = {
   id: string;
@@ -27,5 +28,6 @@ export async function loadThread(ctx: Context, id: string) {
     .bind(id, ctx.workspaceId, ...threadAccessValues(ctx))
     .first<ThreadRow>();
   if (!t) throw new HttpError(404, '会话不存在或无权访问');
+  if (t.project_id) await loadProject(ctx, t.project_id);
   return t;
 }

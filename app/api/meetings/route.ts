@@ -118,13 +118,7 @@ export async function POST(req: Request) {
             m.status === "active" &&
             hasDesk(m, a.desk),
         );
-        if (
-          !m ||
-          (input.region !== "全部分部" &&
-            m.region !== "全部分部" &&
-            input.region !== m.region)
-        )
-          throw new HttpError(400, "行动项负责人岗位或分部不匹配");
+        if (!m) throw new HttpError(400, "负责人已停用或岗位不匹配");
       }
       meeting = {
         ...input,
@@ -151,13 +145,7 @@ export async function POST(req: Request) {
         (m) =>
           m.id === a.assigneeId && m.status === "active" && hasDesk(m, a.desk),
       );
-      if (
-        !m ||
-        (meeting.region !== "全部分部" &&
-          m.region !== "全部分部" &&
-          m.region !== meeting.region)
-      )
-        throw new HttpError(400, "负责人已停用或岗位、分部不匹配");
+      if (!m) throw new HttpError(400, "负责人已停用或岗位不匹配");
       a.taskId = crypto.randomUUID();
       task = {
         id: a.taskId,

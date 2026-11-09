@@ -1,5 +1,6 @@
 import { getContext, handleError, HttpError } from '../../../../server/auth';
 import { inTaskScope, type DeskTask } from '../../../../task-model';
+import { requireTaskProject } from '../../../../server/resource-access';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -19,6 +20,7 @@ export async function GET(
       .first<{ content_base64: string; data: string }>();
     if (!row || !inTaskScope(JSON.parse(row.data) as DeskTask, ctx.member))
       throw new HttpError(404, '图片不存在或无权查看');
+    await requireTaskProject(ctx, JSON.parse(row.data) as DeskTask);
     return new Response(Buffer.from(row.content_base64, 'base64'), {
       headers: {
         'Content-Type': 'image/webp',

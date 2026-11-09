@@ -125,18 +125,16 @@ export type Notification = {
   readAt: string | null;
   createdAt: string;
 };
-export const isScopedManager = (m: Member) =>
-  m.role === "branch_manager" ||
-  (m.role === "management" && m.region !== "全部分部");
+// Legacy region/role values remain readable; V2 has a single company scope.
+export const isScopedManager = (_m: Member) => false;
 export const isCompanyManager = (m: Member) =>
-  ["owner", "general", "director"].includes(m.role) ||
-  (m.role === "management" && !isScopedManager(m));
+  ["owner", "general", "director", "management", "branch_manager"].includes(m.role);
 export const isManager = (m: Member) =>
   isCompanyManager(m) || isScopedManager(m);
 export const canFinance = (m: Member) =>
   m.role === "owner" || m.role === "finance";
 export const canViewFinance = (m: Member) =>
-  canFinance(m) || isManager(m) || m.role === "sales";
+  canFinance(m) || isManager(m);
 export const ownsProject = (p: Project, m: Member) => p.ownerMemberId === m.id;
 export const taskVisible = (dept: string, m: Member) =>
   isManager(m) || departmentDesk(dept) === deskOf(m.role);
@@ -151,21 +149,16 @@ export function canReadProject(p: Project, m: Member) {
       m.region !== "待分配" &&
       workflowOf(p).region === m.region
     );
-  if (m.taskProjectIds?.includes(p.id)) return true;
-  if (m.role === "sales" && ownsProject(p, m)) return true;
-  const w = workflowOf(p);
-  return (
-    Object.entries(w.assignmentMembers || {}).some(
-      ([dept, id]) => id === m.id && matchesDepartment(m, dept),
-    ) ||
-    w.tasks.some(
-      (t) => t.assigneeMemberId === m.id && taskVisible(t.department, m),
-    )
-  );
+  return m.role === "sales" && ownsProject(p, m);
 }
+export const salesCommercial = (c: Project['commercial']): Project['commercial'] => c ? ({
+  ...c, costUnitPrice: null, profitNotes: '',
+  quotes: c.quotes.map(q => ({...q, costUnitPrice: null})),
+  competitors: c.competitors.map(q => ({...q, costUnitPrice: null})),
+}) : undefined;
 export const visibleProject = (p: Project, m: Member): Project => ({
   ...p,
-  commercial: canViewFinance(m) ? p.commercial : undefined,
+  commercial: canViewFinance(m) ? p.commercial : m.role === "sales" && ownsProject(p,m) ? salesCommercial(p.commercial) : undefined,
   workflow: {
     ...workflowOf(p),
     facts: Object.fromEntries(

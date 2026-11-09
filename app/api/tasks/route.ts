@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readableProjectIds, taskAccessible, requireTaskProject } from '../../server/resource-access';
 import {
   getContext,
   handleError,
@@ -48,10 +49,11 @@ export async function GET(req: Request) {
       .bind(ctx.workspaceId)
       .all<Row>();
     const ms = await directory(ctx);
+    const ids = await readableProjectIds(ctx);
     return response({
       tasks: rows.results
         .map(dto)
-        .filter((t) => inTaskScope(t, ctx.member))
+        .filter((t) => taskAccessible(t, ctx, ids))
         .map((t) => ({
           ...t,
           assigneeName:
@@ -84,6 +86,7 @@ export async function POST(req: Request) {
       if (!r || !inTaskScope(dto(r), ctx.member))
         throw new HttpError(404, '任务不存在或无权访问');
       old = dto(r);
+      await requireTaskProject(ctx, old);
       if (old.version !== body.version)
         throw new HttpError(409, '任务已被其他人更新，请刷新后重新打开');
     }
@@ -110,12 +113,6 @@ export async function POST(req: Request) {
         region = workflowOf(p).region;
         if (region === '待分配') region = input.region;
       }
-      if (
-        (isScopedManager(ctx.member) ||
-          (ctx.member.role === 'sales' && ctx.member.region !== '全部分部')) &&
-        region !== ctx.member.region
-      )
-        throw new HttpError(403, '仅可向本分部派发任务');
       let assigneeName = '';
       if (input.assigneeId) {
         const member = (await directory(ctx)).find(
@@ -124,13 +121,7 @@ export async function POST(req: Request) {
             m.status === 'active' &&
             hasDesk(m, input.desk),
         );
-        if (
-          !member ||
-          (region !== '全部分部' &&
-            member.region !== '全部分部' &&
-            member.region !== region)
-        )
-          throw new HttpError(400, '请选择目标台内、所属分部匹配的有效成员');
+        if (!member) throw new HttpError(400, '请选择目标台内的有效成员');
         assigneeName = member.name;
       }
       const moved =

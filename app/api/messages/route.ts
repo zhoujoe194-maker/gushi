@@ -91,16 +91,17 @@ export async function GET(req: Request) {
         rawBefore === null
           ? Number.MAX_SAFE_INTEGER
           : z.coerce.number().int().positive().safe().parse(rawBefore);
+      const names = await projectNames(ctx);
       const rows = await ctx.db
         .prepare(
-          'SELECT * FROM message_items WHERE thread_id=? AND workspace_id=? AND seq<? ORDER BY seq DESC LIMIT 51',
+          "SELECT * FROM message_items WHERE thread_id=? AND workspace_id=? AND seq<? AND (project_id='' OR project_id IN (SELECT value FROM json_each(?))) ORDER BY seq DESC LIMIT 51",
         )
-        .bind(id, ctx.workspaceId, before)
+        .bind(id, ctx.workspaceId, before, JSON.stringify([...names.keys()]))
         .all<ItemRow>();
-      const names = await projectNames(ctx);
       return response({
         messages: rows.results
           .slice(0, 50)
+          .filter(r => !r.project_id || names.has(r.project_id))
           .reverse()
           .map((r) => message(r, names)),
         hasMore: rows.results.length > 50,
@@ -124,13 +125,15 @@ export async function GET(req: Request) {
     const rows = await ctx.db
       .prepare(
         `SELECT t.*,i.seq,i.id AS item_id,i.actor_id,i.actor_name,i.sender_key,i.body,i.project_id AS item_project_id,i.kind AS item_kind,i.created_at,
- (SELECT COUNT(*) FROM message_items u WHERE u.thread_id=t.id AND u.seq>COALESCE(r.last_seq,0) AND u.actor_id<>?) AS unread
- FROM message_threads t JOIN message_items i ON i.seq=(SELECT MAX(seq) FROM message_items WHERE thread_id=t.id)
+ (SELECT COUNT(*) FROM message_items u WHERE u.thread_id=t.id AND u.seq>COALESCE(r.last_seq,0) AND u.actor_id<>? AND (u.project_id='' OR u.project_id IN (SELECT value FROM json_each(?)))) AS unread
+ FROM message_threads t JOIN message_items i ON i.seq=(SELECT MAX(seq) FROM message_items WHERE thread_id=t.id AND (project_id='' OR project_id IN (SELECT value FROM json_each(?))))
  LEFT JOIN message_reads r ON r.thread_id=t.id AND r.member_id=?
  WHERE t.workspace_id=? AND ${threadAccessSQL} ORDER BY i.seq DESC`,
       )
       .bind(
         ctx.member.id,
+        JSON.stringify([...names.keys()]),
+        JSON.stringify([...names.keys()]),
         ctx.member.id,
         ctx.workspaceId,
         ...threadAccessValues(ctx),
@@ -150,7 +153,7 @@ export async function GET(req: Request) {
       )
       .bind(ctx.workspaceId, ...threadAccessValues(ctx))
       .all<{ thread_id: string; member_id: string }>();
-    const threads = rows.results.map((r) => ({
+    const threads = rows.results.filter(r => (!r.project_id || names.has(r.project_id)) && (!r.item_project_id || names.has(r.item_project_id))).map((r) => ({
       id: r.id,
       a: endpointFor(r.endpoint_a, people),
       b: endpointFor(r.endpoint_b, people),

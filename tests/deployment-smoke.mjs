@@ -54,7 +54,7 @@ const migrations = db
   .prepare('SELECT COUNT(*) AS n FROM __app_migrations')
   .get().n;
 db.close();
-check(migrations === 12, '完整应用 0000–0011 十二个迁移');
+check(migrations === readdirSync(join(root,'drizzle')).filter(n => /^\d+.*\.sql$/.test(n)).length, '完整应用全部版本迁移');
 check(run('scripts/selfhost-migrate.mjs').status === 0, '重复迁移幂等');
 for (const script of [
   'scripts/selfhost-start.mjs',

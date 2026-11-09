@@ -71,3 +71,5 @@ next-env.d.ts
 /.next-access-qa/
 /.next-ui/
 /.next-setup-qa/
+
+*.tsbuildinfo

@@ -291,7 +291,7 @@ export async function projectWrite(
           ctx.member.id,
           ctx.member.version,
         );
-  const event = { kind, actor, note, changes };
+  const event = { kind, actor, actorMemberId: ctx.member.id, ownerMemberIdAtTime: before?.ownerMemberId || data.ownerMemberId || null, note, changes };
   const batch: D1PreparedStatement[] = [
     first,
     ctx.db
@@ -300,6 +300,9 @@ export async function projectWrite(
       )
       .bind(evId, id, ctx.workspaceId, JSON.stringify(event), now),
   ];
+  if (before && before.ownerMemberId !== data.ownerMemberId) batch.push(ctx.db.prepare(
+    'INSERT INTO project_owner_history(id,workspace_id,project_id,previous_member_id,new_member_id,actor_id,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM events WHERE id=?)'
+  ).bind(crypto.randomUUID(), ctx.workspaceId, id, before.ownerMemberId || null, data.ownerMemberId || null, ctx.member.id, now, evId));
   const old = before ? workflowOf(before) : null;
   for (const t of workflowOf(data).tasks) {
     const p = old?.tasks.find((x) => x.id === t.id);

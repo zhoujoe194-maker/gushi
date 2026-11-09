@@ -1,3 +1,4 @@
+import { readableProjectIds } from '../../server/resource-access';
 import { z } from 'zod';
 import {
   getContext,
@@ -291,7 +292,11 @@ export async function GET(req: Request) {
         : ctx.member.id);
     if (memberId && !people.some((m) => m.id === memberId))
       throw new HttpError(404, '成员不存在或不在你的管理范围内');
-    const rows = memberId ? await records(ctx, memberId, month, all) : [];
+    const projectIds = await readableProjectIds(ctx);
+    const rows = (memberId ? await records(ctx, memberId, month, all) : []).filter(r => {
+      const data = r.data as {projectId?: string};
+      return !data.projectId || projectIds.has(data.projectId);
+    });
     const queue = await ctx.db
       .prepare(
         "SELECT member_id,region,COUNT(*) AS count FROM sales_records WHERE workspace_id=? AND record_date LIKE ? AND status='submitted' GROUP BY member_id,region",

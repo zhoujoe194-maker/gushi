@@ -331,7 +331,7 @@ export default function RoleDashboard(p: Props) {
     for (const x of salesLate.slice(0, 2))
       reminders.push({
         title: '客户跟进逾期：' + x.name,
-        detail: x.nextAction || '请补充下一步行动和跟进日期',
+        detail: x.latestFollowupContent || x.nextAction || '记录本次进展，下次日期可稍后安排',
         action: () => onOpen(x),
         tone: 'amber',
       });
@@ -460,7 +460,7 @@ export default function RoleDashboard(p: Props) {
                     <button className="project-link" onClick={() => onOpen(x)}>
                       {x.name}
                     </button>
-                    <p>{x.nextAction}</p>
+                    <p>{x.latestFollowupContent || x.nextAction || '等待首次跟进'}</p>
                     <small>
                       {x.stage} · {x.nextDate}
                     </small>

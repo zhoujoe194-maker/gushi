@@ -29,7 +29,7 @@ async function req(id,path='/api/workspace',body,desk){const r=await fetch(base+
 try{
  for(let i=0;i<150;i++){try{await fetch(base);break}catch{await new Promise(r=>setTimeout(r,100));}}
  let a=await req('a');check(a.status===200&&a.data.projects.length===1&&a.data.projects[0].id==='a','销售不能通过同台任务或协作分配查看其他销售项目');
- check(Object.keys(a.data.finances).length===0,'销售不返回完整财务台账');check(!JSON.stringify(a.data).includes('financial-secret'),'销售不返回受保护的财务事实');
+ check(!a.data.finances.b && !a.data.finances.a?.contractSnapshot && !a.data.finances.a?.suppliers,'销售仅返回本人项目的必要合同投影');check(!JSON.stringify(a.data).includes('financial-secret'),'销售不返回受保护的财务事实');
  check((await req('manager')).data.projects.length===2,'公司管理查看全部项目');check((await req('finance')).data.projects.length===2,'财务查看全部项目');check((await req('branch')).data.projects.length===2,'旧分部管理统一查看公司项目');check((await req('ops')).data.projects.length===0,'运营不自动获得项目访问权');
  check((await req('a','/api/workspace',undefined,'finance')).status===403,'伪造工作台请求头无效');
  check((await req('a','/api/tasks')).data.tasks.length===0,'关联任务不泄露其他销售项目');

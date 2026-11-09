@@ -5,8 +5,8 @@ export const STAGES=['项目筛选','设计上图','业主推进','招标跟进'
 export const ACTIVE=STAGES.slice(0,7);
 export type Product={id:string;brand:string;category:string;area:string;name:string};
 export type Opportunity={id:string;productId:string;drawing:'未开始'|'推进中'|'已完成';tender:'未开始'|'推进中'|'已完成';filing:'未报备'|'已提交'|'已确认'|'未通过';note:string;filingDate?:string;filingContact?:string;filingReference?:string};
-export type Project={commercial?:Commercial;execution?:Execution;id:string;version:number;ownerMemberId?:string;name:string;location:string;type:string;source:string;owner:string;stage:string;amount:number;customer:string;designer:string;contractor:string;contact:string;phone:string;nextAction:string;nextDate:string;notes:string;opportunities:Opportunity[];workflow?:Workflow;updatedAt:string};
-export type Event={id:string;projectId:string;createdAt:string;kind:string;actor:string;note:string;changes:string[]};
+export type Project={lastFollowupAt?:string;latestFollowupContent?:string;createdAt?:string;commercial?:Commercial;execution?:Execution;id:string;version:number;ownerMemberId?:string;name:string;location:string;type:string;source:string;owner:string;stage:string;amount:number;customer:string;designer:string;contractor:string;contact:string;phone:string;nextAction:string;nextDate:string;notes:string;opportunities:Opportunity[];workflow?:Workflow;updatedAt:string};
+export type Event={actorMemberId?:string;nextFollowupDate?:string|null;id:string;projectId:string;createdAt:string;kind:string;actor:string;note:string;changes:string[]};
 export type Config={company:string;owners:string[];staleDays:number;products:Product[]};
 const rows=[
 ['欧文斯科宁保温系列','建筑','厂房/仓库钢结构屋墙面保温','钢构玻璃棉'],
@@ -37,8 +37,8 @@ export function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/S
 export function shiftDate(n:number){const d=new Date(today()+'T12:00:00+08:00');d.setUTCDate(d.getUTCDate()+n);return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
 export function daysSince(date:string){const day=date.includes('T')?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(date)):date;return Math.floor((Date.parse(today()+'T00:00:00+08:00')-Date.parse(day+'T00:00:00+08:00'))/86400000);}
 export function isActive(p:Project){return ACTIVE.includes(p.stage);}
-export function risk(p:Project,stale:number){if(!isActive(p))return {text:p.stage,tone:'gray',level:0};if(!p.nextDate||!p.nextAction)return {text:'缺少跟进计划',tone:'red',level:4};if(p.nextDate<today())return {text:'逾期 '+daysSince(p.nextDate)+' 天',tone:'red',level:3};if(daysSince(p.updatedAt)>=stale)return {text:daysSince(p.updatedAt)+' 天未更新',tone:'amber',level:2};if(p.nextDate===today())return {text:'今日待跟进',tone:'blue',level:1};return {text:'正常推进',tone:'green',level:0};}
-export function blankProject(owner:string):Project{return {id:'',version:0,name:'',location:'',type:'工业厂房',source:'老客户',owner,stage:STAGES[0],amount:0,customer:'',designer:'',contractor:'',contact:'',phone:'',nextAction:'',nextDate:today(),notes:'',opportunities:[],updatedAt:new Date().toISOString()};}
+export function risk(p:Project,stale:number){if(!isActive(p))return {text:p.stage,tone:'gray',level:0};if(!p.nextDate)return {text:'待安排跟进',tone:'red',level:4};if(p.nextDate<today())return {text:'逾期 '+daysSince(p.nextDate)+' 天',tone:'red',level:3};if(p.lastFollowupAt && daysSince(p.lastFollowupAt)>=stale)return {text:daysSince(p.lastFollowupAt)+' 天未跟进',tone:'amber',level:2};if(p.nextDate===today())return {text:'今日待跟进',tone:'blue',level:1};return {text:'正常推进',tone:'green',level:0};}
+export function blankProject(owner:string):Project{return {id:'',version:0,name:'',location:'',type:'',source:'',owner,stage:STAGES[0],amount:0,customer:'',designer:'',contractor:'',contact:'',phone:'',nextAction:'',nextDate:'',notes:'',opportunities:[],updatedAt:new Date().toISOString()};}
 export function demoData(){
  const specs=[
  ['苏州高新区智能制造基地','苏州 · 高新区','工业厂房','设计上图',128,'销售负责人',-2,-9,'确认暖通设计图纸与保温参数',['p1','p2','p14']],

@@ -260,8 +260,9 @@ export async function projectWrite(
     id: ignoredId,
     version: ignoredVersion,
     updatedAt: ignoredDate,
-    ...stored
+    ...input
   } = data;
+  const stored = {...input, createdAt: before?.createdAt || (before ? undefined : now), lastFollowupAt: before?.lastFollowupAt, latestFollowupContent: before?.latestFollowupContent};
   const actor = `${ctx.member.name}（${roleInfo(ctx.member.role).name}）`;
   const first = before
     ? ctx.db

@@ -125,6 +125,7 @@ import {
   canEditProject,
   canCreateProject,
   canViewFinance,
+  mayViewBook,
   deskOf,
   visibleProject,
   isScopedManager,
@@ -886,8 +887,8 @@ export default function Workspace({
   const active = scopeProjects.filter(isActive),
     overdue = active.filter((p) => p.nextDate && p.nextDate < today()),
     todayTasks = active.filter((p) => p.nextDate === today()),
-    stale = active.filter((p) => daysSince(p.updatedAt) >= config.staleDays),
-    missing = active.filter((p) => !p.nextDate || !p.nextAction),
+    stale = active.filter((p) => !!p.lastFollowupAt && daysSince(p.lastFollowupAt) >= config.staleDays),
+    missing = active.filter((p) => !p.nextDate),
     attention = active
       .filter((p) => risk(p, config.staleDays).level >= 2)
       .sort(
@@ -930,24 +931,16 @@ export default function Workspace({
   );
   function openProject(p: Project) {
     setDetail(p.id);
-    setDetailTab("阶段推进");
+    setDetailTab("协作动态");
   }
+  const followupRequestId = useRef("");
   function newProject() {
     setDraft({
       ...blankProject(member.name),
       ownerMemberId: member.id,
       workflow: {
         ...workflowOf(blankProject(config.owners[0])),
-        region:
-          viewMember.role === "sales"
-            ? member.region === "全部分部"
-              ? "广州总部"
-              : member.region
-            : isScopedManager(viewMember)
-              ? member.region
-              : region === "全部分部"
-                ? "待分配"
-                : region,
+        region: "全部分部",
       },
     });
     setNote("");
@@ -955,7 +948,8 @@ export default function Workspace({
     setForm("create");
   }
   function openForm(p: Project, mode: "edit" | "followup") {
-    setDraft(structuredClone(p));
+    setDraft({...structuredClone(p), ...(mode === "followup" ? {nextDate:""} : {})});
+    followupRequestId.current = crypto.randomUUID();
     setNote("");
     setError("");
     setForm(mode);
@@ -975,8 +969,6 @@ export default function Workspace({
     try {
       let result: { project: Project; event: Event };
       const payload = { ...draft };
-      if (isActive(draft) && (!draft.nextAction.trim() || !draft.nextDate))
-        throw Error("进行中的项目必须填写下一步行动和跟进日期");
       if (form === "followup" && !note.trim())
         throw Error("请填写本次跟进结果");
       if (demo) {
@@ -1002,6 +994,7 @@ export default function Workspace({
           id: draft.id || crypto.randomUUID(),
           version: draft.version + 1,
           updatedAt: new Date().toISOString(),
+          ...(form === "followup" ? {lastFollowupAt:new Date().toISOString(),latestFollowupContent:note.trim()} : {}),
         };
         result = {
           project: p,
@@ -1015,7 +1008,9 @@ export default function Workspace({
                 : form === "followup"
                   ? "跟进记录"
                   : "更新项目",
-            actor: "当前用户（演示）",
+            actor: member.name + "（演示）",
+            actorMemberId: member.id,
+            ...(form === "followup" ? {nextFollowupDate:draft.nextDate || null} : {}),
             note,
             changes,
           },
@@ -1030,6 +1025,7 @@ export default function Workspace({
             version: draft.version,
             data: payload,
             note,
+            ...(form === "followup" ? {content:note, nextDate:draft.nextDate, requestId:followupRequestId.current} : {}),
           }),
         });
         const b = (await r.json()) as {
@@ -1044,11 +1040,12 @@ export default function Workspace({
         result.project,
         ...ps.filter((p) => p.id !== result.project.id),
       ]);
-      setEvents((es) => [result.event, ...es]);
+      setEvents((es) => [result.event, ...es.filter(e => e.id !== result.event.id)]);
       setForm(null);
       setDetail(result.project.id);
+      setDetailTab("协作动态");
       setNotice(
-        demo ? "演示操作已完成，未写入正式数据" : "已保存，跟进记录已更新",
+        demo ? "演示操作已完成，未写入正式数据" : form === "followup" ? "跟进已保存" : "项目资料已保存",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
@@ -1071,6 +1068,7 @@ export default function Workspace({
           ...data,
           version: project.version + 1,
           updatedAt: new Date().toISOString(),
+          ...(form === "followup" ? {lastFollowupAt:new Date().toISOString(),latestFollowupContent:note.trim()} : {}),
         };
         result = {
           project: updated,
@@ -1107,7 +1105,7 @@ export default function Workspace({
       setProjects((ps) =>
         ps.map((p) => (p.id === project.id ? result.project : p)),
       );
-      setEvents((es) => [result.event, ...es]);
+      setEvents((es) => [result.event, ...es.filter(e => e.id !== result.event.id)]);
       setNotice(demo ? "演示协作记录已更新" : "项目协作记录已保存");
       return true;
     } catch (e) {
@@ -1246,8 +1244,8 @@ export default function Workspace({
     setNotice("已导出当前筛选结果");
   }
   const table = (items: Project[], compact = false) => (
-    <div className="table-scroll">
-      <table className="project-table">
+    <div className="table-scroll quick-project-list">
+      <table className="project-table quick-project-table">
         <thead>
           <tr>
             <th>项目名称 / 产品机会</th>
@@ -1271,6 +1269,8 @@ export default function Workspace({
                   >
                     {p.name}
                   </button>
+                  <div className="cell-sub">最近跟进：{p.lastFollowupAt ? stamp(p.lastFollowupAt) : "暂无记录"}</div>
+                  <div className="cell-sub ellipsis">{p.latestFollowupContent || "等待首次跟进"}</div>
                   <div className="cell-sub">
                     {p.location || "地区待填写"}
                     <span>·</span>
@@ -1295,7 +1295,7 @@ export default function Workspace({
                   </div>
                 </td>
                 <td className={r.tone === "red" ? "text-red" : ""}>
-                  {shortDate(p.nextDate)}
+                  {p.nextDate ? shortDate(p.nextDate) : "待安排跟进"}
                   <div className="cell-sub ellipsis">
                     {p.nextAction || "尚未安排下一步"}
                   </div>
@@ -1310,6 +1310,7 @@ export default function Workspace({
                   <Badge tone={r.tone}>{r.text}</Badge>
                 </td>
                 <td>
+                  {canEditProject(p,viewMember) && <button className="button small-button" onClick={()=>openForm(p,"followup")}>记录跟进</button>}
                   <button
                     className="icon-button"
                     onClick={() => openProject(p)}
@@ -1816,7 +1817,7 @@ export default function Workspace({
                   groupRequest={groupRequest}
                 />
               </div>
-              {tab === "finance" && canViewFinance(viewMember) && (
+              {tab === "finance" && (canViewFinance(viewMember) || viewMember.role === "sales") && (
                 <FinanceCenter
                   member={viewMember}
                   projects={scopeProjects}
@@ -2380,9 +2381,9 @@ export default function Workspace({
             </div>
             <div className="detail-metrics">
               <div>
-                <span>销售主跟 / 分部</span>
+                <span>项目负责人</span>
                 <strong>
-                  {selected.owner} · {workflowOf(selected).region}
+                  {selected.owner}
                 </strong>
               </div>
               <div>
@@ -2400,18 +2401,22 @@ export default function Workspace({
               <div className="next-action-box">
                 <div>
                   <CalendarDays size={17} />
-                  <strong>下一步行动</strong>
-                  <b>{selected.nextDate || "未安排"}</b>
+                  <strong>下次联系</strong>
+                  <b>{selected.nextDate || "待安排跟进"}</b>
                 </div>
-                <p>{selected.nextAction || "请补充跟进计划"}</p>
+                <p>{selected.nextAction || "记录一次跟进，留下最新进展"}</p>
               </div>
             )}
+            <section className="followup-summary" aria-label="最近真实跟进">
+              <strong>最近跟进：{selected.lastFollowupAt ? stamp(selected.lastFollowupAt) : "暂无跟进记录"}</strong>
+              <p>{selected.latestFollowupContent || "项目资料编辑不会计为跟进。联系客户后，用几句话记录进展。"}</p>
+            </section>
             <div className="detail-tabs" role="group" aria-label="项目详情内容">
               {[
                 "阶段推进",
                 "协作动态",
                 "产品机会",
-                ...(canViewFinance(viewMember) ? ["合同与票款"] : []),
+                ...(mayViewBook(selected,viewMember) ? ["合同与票款"] : []),
                 "商务与交付",
                 "项目信息",
               ].map((t) => (
@@ -2474,7 +2479,7 @@ export default function Workspace({
                   }
                 />
               )}
-              {detailTab === "合同与票款" && canViewFinance(viewMember) && (
+              {detailTab === "合同与票款" && mayViewBook(selected,viewMember) && (
                 <>
                   <ProjectFinance
                     member={viewMember}
@@ -2513,6 +2518,7 @@ export default function Workspace({
                         </div>
                         <div className="timeline-actor">{e.actor}</div>
                         {e.note && <p>{e.note}</p>}
+                        {e.kind === "跟进记录" && e.nextFollowupDate !== undefined && <p className="muted">当次安排：{e.nextFollowupDate || "未设置下次跟进日期"}</p>}
                         {e.changes.length > 0 && (
                           <ul>
                             {e.changes.map((c, i) => (
@@ -2646,7 +2652,7 @@ export default function Workspace({
               ? "演示模式：操作不会写入正式工作区"
               : form === "followup"
                 ? draft.name
-                : "将项目信息与下一步行动一次记录清楚。"
+                : "只填写项目名称即可保存，其他资料以后再补充。"
           }
           close={() => {
             if (!busy) {
@@ -2654,7 +2660,7 @@ export default function Workspace({
               setError("");
             }
           }}
-          wide={form !== "followup"}
+          wide={form === "edit"}
         >
           <form onSubmit={saveProject} className="project-form">
             {error && (
@@ -2663,24 +2669,21 @@ export default function Workspace({
               </div>
             )}
             {form === "followup" ? (
-              <label className="field">
-                本次沟通与结果 <em>*</em>
-                <textarea
-                  required
-                  maxLength={4000}
-                  rows={5}
-                  placeholder="与谁沟通？确认了什么？还存在哪些阻碍？"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
+              <>
+                <label className="field">本次跟进内容 <em>*</em>
+                  <textarea autoFocus required maxLength={4000} rows={5} placeholder="记下这次联系的进展，简单几句话就可以。" value={note} onChange={e=>setNote(e.target.value)} />
+                </label>
+                <label className="field">下次跟进日期（选填）
+                  <input type="date" value={draft.nextDate} onChange={e=>setDraft({...draft,nextDate:e.target.value})} aria-describedby="followup-date-help" />
+                </label>
+                <p id="followup-date-help" className="muted">暂不确定可以留空，保存后标记为“待安排跟进”，此前记录仍保留。</p>
+              </>
             ) : (
               <>
-                <div className="form-grid">
-                  <label className="field span2">
+<label className="field span2">
                     项目名称 <em>*</em>
                     <input
-                      required
+                      autoFocus required
                       maxLength={100}
                       placeholder="例如：苏州某智能制造基地二期"
                       value={draft.name}
@@ -2689,6 +2692,11 @@ export default function Workspace({
                       }
                     />
                   </label>
+                <p className="muted">负责人：{draft.owner || member.name}。先保存项目，资料可以随时补充。</p>
+                <details className="project-supplement">
+                  <summary>补充资料（选填）</summary>
+                  <div className="form-grid">
+
                   <label className="field">
                     区域 / 地址
                     <input
@@ -2707,6 +2715,7 @@ export default function Workspace({
                         setDraft({ ...draft, type: e.target.value })
                       }
                     >
+                      <option value="">暂不填写</option>
                       {TYPES.map((x) => (
                         <option key={x}>{x}</option>
                       ))}
@@ -2720,6 +2729,7 @@ export default function Workspace({
                         setDraft({ ...draft, source: e.target.value })
                       }
                     >
+                      <option value="">暂不填写</option>
                       {SOURCES.map((x) => (
                         <option key={x}>{x}</option>
                       ))}
@@ -2738,34 +2748,7 @@ export default function Workspace({
                       }
                     />
                   </label>
-                  <label className="field">
-                    所属分部
-                    <select
-                      disabled={
-                        !isManager(viewMember) &&
-                        !(
-                          form === "create" &&
-                          viewMember.region === "全部分部" &&
-                          hasDesk(viewMember, "management")
-                        )
-                      }
-                      value={workflowOf(draft).region}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          workflow: {
-                            ...workflowOf(draft),
-                            region: e.target.value,
-                          },
-                        })
-                      }
-                    >
-                      {["待分配", "广州总部", "湖南分部"].map((x) => (
-                        <option key={x}>{x}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
+{isManager(viewMember) && (                  <label className="field">
                     项目负责人 <em>*</em>
                     <select
                       required
@@ -2795,7 +2778,7 @@ export default function Workspace({
                           </option>
                         ))}
                     </select>
-                  </label>
+                  </label>)}
                   <label className="field">
                     业主单位
                     <input
@@ -2990,20 +2973,9 @@ export default function Workspace({
                       }
                     />
                   </div>
-                ))}
-              </>
-            )}
-            <h3 className="form-section-title">推进计划</h3>
-            <div className="followup-prompt">
-              <strong>{guideFor(draft.stage).title}</strong>
-              <p>{guideFor(draft.stage).goal}</p>
-              <small>
-                记录沟通对象、需求与结果、尚存阻碍、下一步，以及需要反馈的相关方。
-              </small>
-            </div>
-            <div className="form-grid">
+                ))}            <div className="form-grid">
               <label className="field">
-                当前阶段
+                详细工程阶段（选填）
                 <select
                   value={draft.stage}
                   onChange={(e) =>
@@ -3016,10 +2988,10 @@ export default function Workspace({
                 </select>
               </label>
               <label className="field">
-                下次跟进日期 {isActive(draft) && <em>*</em>}
+                下次跟进日期（选填）
                 <input
                   type="date"
-                  required={isActive(draft)}
+
                   value={draft.nextDate}
                   onChange={(e) =>
                     setDraft({ ...draft, nextDate: e.target.value })
@@ -3027,9 +2999,9 @@ export default function Workspace({
                 />
               </label>
               <label className="field span2">
-                下一步行动 {isActive(draft) && <em>*</em>}
+                下一步行动（选填）
                 <input
-                  required={isActive(draft)}
+
                   maxLength={2000}
                   placeholder="明确要做什么，例如：周五与设计师确认保温参数"
                   value={draft.nextAction}
@@ -3038,7 +3010,7 @@ export default function Workspace({
                   }
                 />
               </label>
-              {form !== "followup" && (
+              {(
                 <label className="field span2">
                   项目备注
                   <textarea
@@ -3052,6 +3024,10 @@ export default function Workspace({
                 </label>
               )}
             </div>
+
+                </details>
+              </>
+            )}
             <div className="form-actions">
               <span>
                 {demo

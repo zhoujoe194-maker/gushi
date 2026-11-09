@@ -177,7 +177,7 @@ export const canCreateProject = (m: Member) =>
 export const canCheckDepartment = (m: Member, dept: DepartmentId) =>
   matchesDepartment(m, dept);
 export const mayViewBook = (p: Project, m: Member) =>
-  canReadProject(p, m) && canViewFinance(m);
+  canReadProject(p, m) && (canViewFinance(m) || (m.role === "sales" && ownsProject(p,m)));
 export const FINANCE_FACTS = new Set(["payment-record"]);
 export const canViewFact = (m: Member, key: string) =>
   (!FINANCE_FACTS.has(key) &&

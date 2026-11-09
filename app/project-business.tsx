@@ -28,7 +28,8 @@ export function ProjectBusiness({
     [error, setError] = useState("");
   const c = draft.commercial || emptyCommercial(),
     x = draft.execution || emptyExecution(),
-    show = canViewFinance(member),
+    show = canViewFinance(member) || (member.role === "sales" && canEditProject(project,member)),
+    sensitive = canViewFinance(member),
     canEdit = canEditProject(project, member);
   const current = editing ? draft : project,
     cc = current.commercial || emptyCommercial(),
@@ -131,7 +132,7 @@ export function ProjectBusiness({
                   ["单价（元）", "unitPrice"],
                   ["报价总额（元）", "total"],
                   ...(key === "quotes"
-                    ? [["成本单价（元）", "costUnitPrice"]]
+                    ? (sensitive ? [["成本单价（元）", "costUnitPrice"]] : [])
                     : []),
                 ].map(([label, k]) => (
                   <label className="field" key={k}>
@@ -268,13 +269,13 @@ export function ProjectBusiness({
       </div>
       {show && (
         <section className="finance-block">
-          <h4>合同面积、单价与利润空间</h4>
+          <h4>{sensitive ? "合同面积、单价与利润空间" : "合同面积与销售报价"}</h4>
           {editing ? (
             <div className="business-grid">
               {[
                 ["合同面积", "area"],
                 ["销售单价（元）", "unitPrice"],
-                ["成本单价（元）", "costUnitPrice"],
+                ...(sensitive ? [["成本单价（元）", "costUnitPrice"]] : []),
               ].map(([label, key]) => (
                 <label className="field" key={key}>
                   {label}
@@ -300,7 +301,7 @@ export function ProjectBusiness({
                   />
                 </label>
               ))}
-              <label className="field">
+              {sensitive && <label className="field">
                 利润空间说明
                 <textarea
                   rows={3}
@@ -309,18 +310,16 @@ export function ProjectBusiness({
                   onChange={(e) => changeC("profitNotes", e.target.value)}
                   placeholder="税费、运输、安装、返点及可让利空间"
                 />
-              </label>
+              </label>}
             </div>
           ) : (
             <>
               <p>
                 合同面积：{cc.area ?? "待补充"} {cc.areaUnit} · 销售单价：
-                {cc.unitPrice ?? "待补充"} {cc.priceUnit} · 成本单价：
-                {cc.costUnitPrice ?? "待补充"} {cc.priceUnit}
+                {cc.unitPrice ?? "待补充"} {cc.priceUnit}
+                {sensitive && <> · 成本单价：{cc.costUnitPrice ?? "待补充"} {cc.priceUnit}</>}
               </p>
-              <p className="business-prewrap">
-                {cc.profitNotes || "利润口径待补充"}
-              </p>
+              {sensitive && <p className="business-prewrap">{cc.profitNotes || "利润口径待补充"}</p>}
             </>
           )}
           {cc.unitPrice !== null && cc.costUnitPrice !== null && (

@@ -8,3 +8,11 @@ export const emptyBook=(id:string):FinanceBook=>({projectId:id,version:0,updated
 export const money=(cents:number)=>new Intl.NumberFormat('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
 export const toCents=(value:string)=>{if(!/^\d{1,10}(\.\d{1,2})?$/.test(value))return NaN;const [whole,decimal='']=value.split('.');return Number(whole)*100+Number(decimal.padEnd(2,'0'));};
 export function totals(book:FinanceBook){const received=book.receipts.filter(r=>!r.voidAt).reduce((s,r)=>s+r.amountCents,0);const scheduled=book.plans.reduce((s,p)=>s+p.amountCents,0);const balance=book.reviewStatus==='已审核'?Math.max(0,scheduled-received):0;const overdue=book.plans.filter(p=>p.dueDate<today()).reduce((s,p)=>s+Math.max(0,p.amountCents-book.receipts.filter(r=>!r.voidAt&&r.planId===p.id).reduce((v,r)=>v+r.amountCents,0)),0);const invoiced=book.invoices.filter(i=>i.status==='已开票').reduce((s,i)=>s+i.amountCents,0);return {received,scheduled,balance,overdue,invoiced,pendingInvoices:book.invoices.filter(i=>i.status==='待开票').length};}
+
+// Sales receive an explicit customer-facing projection, never a raw finance book.
+export function salesBook(b:FinanceBook):FinanceBook {
+ return {...emptyBook(b.projectId),version:b.version,updatedAt:b.updatedAt,contractNo:b.contractNo,contractAmountCents:b.contractAmountCents,paymentTerms:b.paymentTerms,reviewStatus:b.reviewStatus,reviewNote:b.reviewNote,submittedBy:b.submittedBy,submittedAt:b.submittedAt,reviewedAt:b.reviewedAt,
+ plans:b.plans.map(p=>({id:p.id,label:p.label,amountCents:p.amountCents,dueDate:p.dueDate})),
+ receipts:b.receipts.map(r=>({id:r.id,planId:r.planId,amountCents:r.amountCents,date:r.date,reference:'',note:'',recordedBy:'',...(r.voidAt?{voidAt:r.voidAt}:{})})),
+ invoices:b.invoices.map(i=>({id:i.id,amountCents:i.amountCents,title:i.title,taxNo:i.taxNo,remark:i.remark,requestedBy:i.requestedBy,requestedAt:i.requestedAt,status:i.status,number:i.number,issuedDate:i.issuedDate,reply:i.reply}))};
+}

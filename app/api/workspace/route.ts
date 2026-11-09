@@ -1,6 +1,5 @@
 import { taskAccessible } from '../../server/resource-access';
 import {canViewSupplier} from '../../finance-operations';
-import { hasDesk } from '../../access';
 import { z } from 'zod';
 import {
   getContext,
@@ -11,7 +10,9 @@ import {
   HttpError,
 } from '../../server/auth';
 import { projectSchema, configSchema } from '../../server/validation';
-import { Project } from '../../model';
+import { Project, blankProject } from '../../model';
+import { mergeSalesCommercial } from '../../server/commercial-access';
+import { appendFollowup } from '../../server/followups';
 import {
   projectDTO,
   ProjectRow,
@@ -32,12 +33,13 @@ import {
   visibleProject,
   isScopedManager,
   FINANCE_FACTS,
-  salesCommercial,
+  mayViewBook,
   canViewFact,
 } from '../../team';
 import { workflowChanges, workflowOf, EMPTY_WORKFLOW } from '../../workflow';
 import { linkageSummary } from '../../dashboard-model';
 import { DeskTask } from '../../task-model';
+import { salesBook } from '../../finance-model';
 import { emptyBook, FinanceBook } from '../../finance-model';
 export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
@@ -103,8 +105,7 @@ export async function GET(req: Request) {
         .map((p) => visibleProject(p, ctx.member)),
       ids = new Set(projects.map((p) => p.id));
     const finances: Record<string, FinanceBook> = {};
-    if (canViewFinance(ctx.member))
-      for (const p of projects) {
+    for (const p of projects.filter(p => mayViewBook(p, ctx.member))) {
         const b = books.results.find((b) => b.project_id === p.id);
         const book = b
           ? {
@@ -116,7 +117,7 @@ export async function GET(req: Request) {
           : emptyBook(p.id);
         if (!canFinance(ctx.member)) delete book.financeMemo;
         if (!canViewSupplier(ctx.member)) delete book.suppliers;
-        finances[p.id] = book;
+        finances[p.id] = canViewFinance(ctx.member) ? book : salesBook(book);
       }
     const events = allEvents.results
       .filter((e) => ids.has(e.project_id))
@@ -148,8 +149,7 @@ export async function GET(req: Request) {
       );
     const summaryBooks: Record<string, FinanceBook> = {};
     for (const p of projects) {
-      const row = books.results.find((b) => b.project_id === p.id);
-      summaryBooks[p.id] = canViewFinance(ctx.member) && row ? JSON.parse(row.data) : emptyBook(p.id);
+      summaryBooks[p.id] = finances[p.id] || emptyBook(p.id);
     }
     const linkages = linkageSummary(
       projects,
@@ -233,7 +233,8 @@ export async function POST(req: Request) {
       )
     )
       throw new HttpError(400, '不支持的操作');
-    const parsed = projectSchema.parse(body.data) as Omit<
+    if (body.action === 'followup') return response(await appendFollowup(ctx, body));
+    const parsed = projectSchema.parse(body.action === 'create' ? {...blankProject(ctx.member.name), ...body.data} : body.data) as Omit<
       Project,
       'id' | 'version' | 'updatedAt'
     >;
@@ -242,15 +243,12 @@ export async function POST(req: Request) {
       if (!canCreateProject(ctx.member))
         throw new HttpError(403, '当前岗位不能创建销售项目');
       if (ctx.member.role === 'sales') {
+        if (parsed.ownerMemberId && parsed.ownerMemberId !== ctx.member.id) throw new HttpError(403, '销售只能创建自己负责的项目');
         parsed.ownerMemberId = ctx.member.id;
         parsed.owner = ctx.member.name;
         parsed.workflow = {
           ...workflowOf(parsed as Project),
-          region:
-            hasDesk(ctx.member, 'management') &&
-            ctx.member.region === '全部分部'
-              ? workflowOf(parsed as Project).region
-              : ctx.member.region,
+          region: '全部分部',
         };
       } else {
         parsed.ownerMemberId ||= ctx.member.id;
@@ -279,8 +277,8 @@ export async function POST(req: Request) {
         );
       if (parsed.execution === undefined) parsed.execution = before.execution;
       if (!canViewFinance(ctx.member) && parsed.commercial !== undefined) {
-        if (JSON.stringify(parsed.commercial) !== JSON.stringify(salesCommercial(before.commercial))) throw new HttpError(403, '当前岗位不能修改商务报价');
-        parsed.commercial = before.commercial;
+        if (!canEditProject(before,ctx.member)) throw new HttpError(403, '当前岗位不能修改商务报价');
+        parsed.commercial = mergeSalesCommercial(parsed.commercial,before.commercial);
       }
       if (parsed.commercial === undefined) parsed.commercial = before.commercial;
       if (!parsed.workflow && before.workflow)
@@ -317,7 +315,7 @@ export async function POST(req: Request) {
         if (value !== undefined) parsed.workflow.facts[key] = value;
       }
     }
-    if (!canViewFinance(ctx.member) && !before && parsed.commercial) throw new HttpError(403, '当前岗位不能修改商务报价');
+    if (!canViewFinance(ctx.member) && !before && parsed.commercial) parsed.commercial = mergeSalesCommercial(parsed.commercial);
     const data = {
       ...parsed,
       id: before?.id || '',

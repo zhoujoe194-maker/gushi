@@ -14,9 +14,10 @@ import {
   directory,
 } from "../../server/auth";
 import { loadProject } from "../../server/projects";
-import { canFinance, canEditProject, roleInfo, mayViewBook } from "../../team";
+import { canFinance, canEditProject, roleInfo, mayViewBook, canViewFinance } from "../../team";
 import {
   FinanceBook,
+  salesBook,
   emptyBook,
   totals,
   money,
@@ -310,7 +311,7 @@ export async function POST(req: Request) {
     if (!canFinance(ctx.member)) delete b.financeMemo;
     if (!canViewSupplier(ctx.member)) delete b.suppliers;
     return response({
-      book: b,
+      book: canViewFinance(ctx.member) ? b : salesBook(b),
       event: { ...event, id: eventId, projectId, createdAt: now },
     });
   } catch (e) {

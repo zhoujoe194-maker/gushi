@@ -1,0 +1,23 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      DATABASE_PATH: /app/data/company.sqlite
+      TRUST_PROXY: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - company_data:/app/data
+      - company_backups:/app/backups
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  company_data:
+  company_backups:

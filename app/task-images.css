@@ -1,0 +1,66 @@
+.task-image-picker {
+  margin-block: var(--space-5);
+}
+.task-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+  margin-block: var(--space-4);
+}
+.task-image-grid li {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+.task-image-grid a {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+.task-image-grid img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--color-canvas);
+  border-radius: var(--radius-sm);
+}
+.task-image-grid small {
+  color: var(--color-accent);
+}
+.task-image-grid button {
+  min-height: var(--target-size);
+  margin-top: var(--space-1);
+}
+.task-image-picker input[type='file'] {
+  max-width: 100%;
+  font-size: var(--text-sm);
+}
+@media (max-width: 420px) {
+  .task-image-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.task-image-preview summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.task-image-grid li:has(.task-image-preview[open]) {
+  grid-column: 1 / -1;
+}
+.task-image-preview[open] summary img {
+  display: none;
+}
+.task-image-grid .task-image-full {
+  aspect-ratio: auto;
+  margin-top: var(--space-3);
+}

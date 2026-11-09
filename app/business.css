@@ -1,0 +1,101 @@
+.business-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4, 16px);
+}
+.business-card,
+.evidence-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-4, 16px);
+  margin-block: var(--space-4, 16px);
+  min-width: 0;
+}
+.business-card h5 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+.business-card p,
+.evidence-row p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.business-prewrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.business-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 12px;
+}
+.evidence-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.evidence-check input {
+  width: 20px;
+  height: 20px;
+}
+.evidence-row h4 {
+  line-height: 1.6;
+}
+.project-business .finance-block > h4 {
+  margin-bottom: 16px;
+}
+.project-business .field {
+  margin-block: 8px;
+}
+.project-business dd {
+  margin: 0;
+}
+.finance-queue {
+  margin-bottom: 24px;
+}
+.business-card summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.business-card fieldset {
+  min-width: 0;
+}
+.project-business input,
+.project-business select,
+.project-business textarea {
+  max-width: 100%;
+}
+.business-grid .field {
+  min-width: 0;
+}
+.business-card .section-heading,
+.evidence-row .section-heading {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.business-card .payment-plan-row {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .business-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-business .section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .evidence-row {
+    padding: 12px;
+  }
+  .finance-queue .payment-plan-row {
+    flex-wrap: wrap;
+  }
+  .business-card {
+    padding: 12px;
+  }
+}

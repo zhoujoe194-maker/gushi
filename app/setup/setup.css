@@ -1,0 +1,48 @@
+.setup-layout {
+  align-items: start;
+}
+.setup-card {
+  min-width: 0;
+}
+.setup-account {
+  margin: var(--space-5) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+}
+.setup-account dt {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+.setup-account dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-base);
+  font-family: var(--font-data);
+  overflow-wrap: anywhere;
+}
+.setup-note {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.setup-card .field {
+  margin-bottom: var(--space-4);
+}
+.setup-card .onboarding-passwords .field {
+  margin-bottom: 0;
+}
+.setup-card .error-box {
+  margin-bottom: var(--space-4);
+}
+.setup-card .error-box a {
+  text-decoration: underline;
+}
+@media (max-width: 700px) {
+  .setup-card {
+    padding: var(--space-5);
+  }
+  .setup-layout {
+    gap: var(--space-6);
+  }
+}

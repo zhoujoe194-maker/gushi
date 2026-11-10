@@ -76,3 +76,20 @@
   .quick-project-table .project-link {text-align:left; white-space:normal; min-height:44px;}
   .followup-summary {margin-inline:20px;}
 }
+
+/* Outcome recording stays secondary to everyday follow-up. */
+.project-outcomes .field {min-width:0;}
+.outcome-revision {border-left:3px solid var(--line);padding:12px 16px;margin:12px 0;overflow-wrap:anywhere;}
+.results-panel {padding:24px;}
+.result-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0;}
+.result-metrics>div {border:1px solid var(--line);border-radius:10px;padding:16px;}
+.result-metrics strong {display:block;font-size:var(--text-2xl);margin-top:8px;}
+.reason-counts {display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;}
+.review-row,.review-policy,.pause-review-reminder {display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.review-row {padding:14px 0;border-bottom:1px solid var(--line);}
+.pause-review-reminder {padding:18px 22px;margin-bottom:20px;border:1px solid var(--line);border-radius:10px;}
+.outcome-history p,.pause-review-reminder p,.review-row p {line-height:1.7;margin-top:6px;overflow-wrap:anywhere;}
+@media(max-width:600px){.result-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.results-panel{padding:16px;}.review-row,.review-policy,.pause-review-reminder{align-items:stretch;flex-direction:column;}.project-outcomes .section-heading{align-items:stretch;flex-direction:column;}.project-outcomes .field input,.project-outcomes .field textarea,.project-outcomes .field select,.results-panel input,.results-panel select{font-size:16px;min-height:44px;}.project-outcomes .button,.results-panel .button,.pause-review-reminder .button{min-height:44px;}}
+/* A previous success message must not cover a new dialog's submit buttons. */
+body:has(.modal-backdrop) .toast {display:none;}
+.toast {pointer-events:none;}

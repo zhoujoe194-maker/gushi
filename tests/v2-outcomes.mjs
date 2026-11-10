@@ -1,0 +1,177 @@
+// Disposable database and actual HTTP routes; never opens company databases.
+import {mkdtempSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {spawn,spawnSync} from 'node:child_process';
+import {randomBytes,createHash,randomUUID} from 'node:crypto';
+import {openSqlite} from '../runtime/sqlite.mjs';
+const dir=mkdtempSync(join(tmpdir(),'gushi-v2b-')), database=join(dir,'qa.sqlite'), port=Number(process.env.V2_QA_PORT||5271),base=`http://127.0.0.1:${port}`;
+const env={...process.env,DATABASE_PATH:database,APP_ORIGIN:base,APP_BUILD_DIR:'.next-production',NODE_ENV:'production'};
+const migration=spawnSync(process.execPath,['scripts/selfhost-migrate.mjs'],{env,encoding:'utf8'}); if(migration.status)throw Error(migration.stderr);
+const db=openSqlite(database), now=new Date().toISOString(), cookies={};
+for(const [id,role,region] of [['a','sales','广州总部'],['b','sales','广州总部'],['manager','management','全部分部'],['branch','management','湖南分部'],['finance','finance','全部分部'],['ops','operations','广州总部']]){
+ db.prepare('INSERT INTO members(id,workspace_id,email,name,role,region,status,version,created_at,updated_at,profile_completed_at) VALUES(?,?,?,?,?,?,?,1,?,?,?)').run(id,'w',id+'@example.invalid',id,role,region,'active',now,now,now);
+ db.prepare('INSERT INTO credentials VALUES(?,?,0,1,?)').run(id,'unused-test-hash',now);
+ const token=randomBytes(32).toString('hex');cookies[id]='gushi_session='+token;
+ db.prepare('INSERT INTO auth_sessions VALUES(?,?,1,?,?)').run(createHash('sha256').update(token).digest('hex'),id,'2099-01-01',now);
+}
+const project=(owner)=>({name:'secret-'+owner,location:'广州',type:'工业厂房',source:'老客户',owner,ownerMemberId:owner,stage:'商务谈判',amount:10,customer:'customer-'+owner,designer:'',contractor:'',contact:'',phone:'',nextAction:'联系',nextDate:'2026-12-01',notes:'',opportunities:[],workflow:{region:'广州总部',assignments:{},assignmentMembers:{sales:'a'},tasks:[],checklist:{},facts:{'payment-record':'financial-secret'},milestones:{}}});
+for(const id of ['a','b'])db.prepare('INSERT INTO projects VALUES(?,?,?,?,?)').run(id,'w',JSON.stringify(project(id)),1,now);
+const task={id:'t',desk:'sales',region:'广州总部',title:'SECRET-TASK',request:'SECRET-DETAILS',dueDate:'2026-12-01',projectId:'b',assigneeId:'a',createdBy:'manager',version:1,status:'待处理',history:[]};
+db.prepare('INSERT INTO desk_tasks VALUES(?,?,?,?,?,?,?,?)').run('t','w','sales','广州总部','b',JSON.stringify(task),1,now);
+db.prepare('INSERT INTO task_images VALUES(?,?,?,?,?)').run('image','w','t','AA==',now);
+db.prepare("INSERT INTO message_threads(id,workspace_id,endpoint_a,endpoint_b,created_at,kind,name,project_id,created_by) VALUES('g','w','group:g','group:g',?,'group','SECRET-GROUP','b','manager')").run(now);
+for(const id of ['a','b']) db.prepare('INSERT INTO message_participants VALUES(?,?,?)').run('g',id,now);
+db.prepare("INSERT INTO message_items(id,thread_id,workspace_id,actor_id,actor_name,sender_key,body,project_id,created_at) VALUES('msg','g','w','b','b','person:b','SECRET-MESSAGE','b',?)").run(now);
+const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-p',String(port)],{env,stdio:['ignore','pipe','pipe']}); let log=''; server.stdout.on('data',d=>log+=d);server.stderr.on('data',d=>log+=d);
+let count=0;function check(v,label){if(!v)throw Error(label);console.log('PASS '+label);count++}
+async function req(id,path='/api/workspace',body,desk){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{Cookie:cookies[id],...(desk?{'x-workspace-desk':desk}:{}),...(body?{Origin:base,'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
+try{
+ for(let i=0;i<150;i++){try{await fetch(base);break}catch{await new Promise(r=>setTimeout(r,100));}}
+ let a=await req('a');check(a.status===200&&a.data.projects.length===1&&a.data.projects[0].id==='a','销售不能通过同台任务或协作分配查看其他销售项目');
+ check(!a.data.finances.b && !a.data.finances.a?.contractSnapshot && !a.data.finances.a?.suppliers,'销售仅返回本人项目的必要合同投影');check(!JSON.stringify(a.data).includes('financial-secret'),'销售不返回受保护的财务事实');
+ check((await req('manager')).data.projects.length===2,'公司管理查看全部项目');check((await req('finance')).data.projects.length===2,'财务查看全部项目');check((await req('branch')).data.projects.length===2,'旧分部管理统一查看公司项目');check((await req('ops')).data.projects.length===0,'运营不自动获得项目访问权');
+ check((await req('a','/api/workspace',undefined,'finance')).status===403,'伪造工作台请求头无效');
+ check((await req('a','/api/tasks')).data.tasks.length===0,'关联任务不泄露其他销售项目');
+ check((await req('a','/api/tasks',{action:'feedback',id:'t',version:1,status:'处理中',result:'attack'})).status===404,'任务修改接口独立检查项目权限');
+ check((await req('a','/api/tasks/images/image')).status===404,'直接图片URL不能绕过权限');
+ check((await req('a','/api/messages?threadId=g')).status===404,'群成员不能读取无权项目群正文');check((await req('a','/api/messages')).data.threads.length===0,'群列表不泄露名称或摘要');check((await req('b','/api/messages?threadId=g')).data.messages.length===1,'负责人仍可读授权群历史');
+ check((await req('manager','/api/messages?threadId=g')).status===404,'管理身份不会自动获得私人群历史');
+ check((await req('finance','/api/workspace',{action:'update',id:'a',version:1,data:{...project('a'),name:'attack'}})).status===403,'财务不能修改销售主档');
+ check((await req('a','/api/workspace',{action:'update',id:'b',version:1,data:project('b')})).status===404,'直接项目修改API不能读取非本人项目');
+ check((await req('a','/api/workspace',{action:'update',id:'a',version:1,data:{...project('a'),owner:'b',ownerMemberId:'b'}})).status===403,'销售不能伪造负责人转交项目');
+ const directId='private';db.prepare("INSERT INTO message_threads(id,workspace_id,endpoint_a,endpoint_b,created_at) VALUES(?,'w','person:a','person:b',?)").run(directId,now);
+ for(const [id,body,projectId] of [['public-msg','NORMAL',''],['restricted-msg','SECRET-PRIVATE','b']])db.prepare("INSERT INTO message_items(id,thread_id,workspace_id,actor_id,actor_name,sender_key,body,project_id,created_at) VALUES(?,?,'w','b','b','person:b',?,?,?)").run(id,directId,body,projectId,now);
+ const dm=await req('a','/api/messages?threadId=private');check(dm.data.messages.length===1 && dm.data.messages[0].body==='NORMAL','私人消息逐条过滤无权项目正文');
+ const dmList=await req('a','/api/messages');check(!JSON.stringify(dmList.data).includes('SECRET-PRIVATE'),'私聊摘要不泄露无权项目正文');
+ check((await req('finance','/api/messages?threadId=private')).status===404,'财务不自动读取私人聊天');
+ const moved=await req('manager','/api/workspace',{action:'update',id:'b',version:1,data:{...project('b'),ownerMemberId:'a',owner:'a'}});check(moved.status===200,'管理可转交负责人');
+ check((await req('b')).data.projects.length===0,'转交后旧会话立即失去项目权限');check((await req('b','/api/messages?threadId=g')).status===404,'转交后旧负责人立即失去项目群权限');
+ check(db.prepare('SELECT previous_member_id,new_member_id FROM project_owner_history').get().previous_member_id==='b','转交保存稳定成员ID历史');check(db.prepare('SELECT count(*) n FROM message_items').get().n===3,'撤权不删除历史消息');
+ const independent={...task,id:'independent',projectId:'',desk:'operations',assigneeId:'ops',region:'湖南分部'};db.prepare('INSERT INTO desk_tasks VALUES(?,?,?,?,?,?,?,?)').run(independent.id,'w','operations','广州总部',null,JSON.stringify(independent),1,now);
+ check((await req('ops','/api/tasks')).data.tasks.some(t=>t.id==='independent'),'原运营人员可接收跨旧分部的独立协作任务');
+
+ const created=await req('a','/api/workspace',{action:'create',data:{name:'极简试用项目'}});
+ check(created.status===200,'只填写项目名称即可创建');
+ let quick=created.data.project;check(quick.ownerMemberId==='a' && quick.owner==='a','负责人由服务端绑定当前成员');check(quick.nextDate==='' && !quick.lastFollowupAt,'未安排跟进且不伪造创建跟进时间');
+ check((await req('a','/api/workspace',{action:'create',data:{name:'伪造归属',ownerMemberId:'b'}})).status===403,'销售不能新建他人负责的项目');
+ const assigned=await req('manager','/api/workspace',{action:'create',data:{name:'管理指派',ownerMemberId:'b'}});check(assigned.status===200&&assigned.data.project.ownerMemberId==='b','管理可指定负责人');
+ const first={action:'followup',id:quick.id,version:quick.version,content:'第一次联系，确认需求',nextDate:'2026-12-05',requestId:randomUUID()};
+ let result=await req('a','/api/workspace',first);check(result.status===200,'文字和可选日期保存成功');quick=result.data.project;
+ check(quick.lastFollowupAt===result.data.event.createdAt && result.data.event.actorMemberId==='a','服务器记录真实跟进时间和稳定操作人ID');
+ const second={action:'followup',id:quick.id,version:quick.version,content:'第二次联系，等待客户反馈',requestId:randomUUID()};result=await req('a','/api/workspace',second);check(result.status===200&&result.data.project.nextDate==='','不填下次日期也保存并标记待安排');quick=result.data.project;
+ const history=db.prepare('SELECT * FROM project_followups WHERE project_id=? ORDER BY created_at').all(quick.id);
+ check(history.length===2 && history[0].next_followup_date==='2026-12-05' && history[1].next_followup_date===null,'独立记录追加且保留此前跟进日期');
+ const replay=await req('a','/api/workspace',second);check(replay.status===200&&db.prepare('SELECT count(*) n FROM project_followups WHERE project_id=?').get(quick.id).n===2,'重试同一请求不会重复追加');
+ let changed=await req('a','/api/workspace',{action:'update',id:quick.id,version:quick.version,data:{...quick,customer:'补充客户',lastFollowupAt:'2099-01-01',latestFollowupContent:'fake'}});
+ check(changed.status===200&&changed.data.project.lastFollowupAt===quick.lastFollowupAt&&changed.data.project.latestFollowupContent===quick.latestFollowupContent,'普通资料编辑与伪造字段不改变真实跟进');quick=changed.data.project;
+ check((await req('finance','/api/workspace',{...second,version:quick.version,requestId:randomUUID()})).status===403,'财务不能新增销售跟进');
+ check((await req('b','/api/workspace',{...second,version:quick.version,requestId:randomUUID()})).status===404,'其他销售不能跟进或读取项目');
+ check((await req('a','/api/workspace',{...second,version:quick.version,content:'   ',requestId:randomUUID()})).status===400,'空白跟进内容被后端拒绝');
+ check((await req('a','/api/workspace',{...second,version:quick.version,nextDate:'2026-02-30',requestId:randomUUID()})).status===400,'非法日期被后端拒绝');
+ const parallel=await Promise.all([req('a','/api/workspace',{...second,version:quick.version,content:'并发一',requestId:randomUUID()}),req('a','/api/workspace',{...second,version:quick.version,content:'并发二',requestId:randomUUID()})]);
+ check(parallel.filter(r=>r.status===200).length===1&&parallel.filter(r=>r.status===409).length===1,'并发跟进版本冲突不覆盖历史');quick=parallel.find(r=>r.status===200).data.project;
+ const contract=await req('a','/api/finance',{action:'submit_contract',projectId:quick.id,version:0,contractNo:'TRIAL-001',contractAmountCents:100000,paymentTerms:'验收后付款'});
+ check(contract.status===200 && contract.data.book.reviewStatus==='待审核','销售合同提交流程恢复');
+ check(!contract.data.book.contractSnapshot && !contract.data.book.suppliers && !contract.data.book.financeMemo,'合同响应不泄露快照成本或内部财务数据');
+ const commercial={area:20,areaUnit:'㎡',priceUnit:'元/㎡',unitPrice:100,costUnitPrice:66,profitNotes:'PRIVATE-PROFIT',quotes:[],competitors:[],contractorName:'测试单位',funding:'',debt:'',litigation:'',badContracts:'',riskLevel:'待核实',verification:'待核实',source:'',checkedDate:'',riskResponse:''};
+ changed=await req('manager','/api/workspace',{action:'update',id:quick.id,version:quick.version,data:{...quick,commercial}});check(changed.status===200,'管理可以保存成本资料');
+ const salesView=(await req('a')).data.projects.find(p=>p.id===quick.id);check(salesView.commercial.costUnitPrice===null&&salesView.commercial.profitNotes==='','销售看不到成本和利润');
+ changed=await req('a','/api/workspace',{action:'workflow',id:quick.id,version:salesView.version,note:'更新客户报价',data:{...salesView,commercial:{...salesView.commercial,unitPrice:120}}});
+ check(changed.status===200&&changed.data.project.commercial.unitPrice===120,'销售报价入口仍能编辑销售单价');
+ const stored=JSON.parse(db.prepare('SELECT data FROM projects WHERE id=?').get(quick.id).data);
+ check(stored.commercial.costUnitPrice===66&&stored.commercial.profitNotes==='PRIVATE-PROFIT','销售更新报价不覆盖隐藏成本利润');
+ check(stored.lastFollowupAt===quick.lastFollowupAt,'合同和报价编辑不冒充真实跟进');
+ check((await req('a','/api/workspace',{action:'update',id:quick.id,version:changed.data.project.version,data:{...changed.data.project,commercial:{...changed.data.project.commercial,costUnitPrice:1}}})).status===403,'销售伪造成本修改被拒绝');
+
+ const approved=await req('finance','/api/finance',{action:'review_contract',projectId:quick.id,version:contract.data.book.version,decision:'approved',plans:[{id:randomUUID(),label:'货款',amountCents:100000,dueDate:'2026-12-05'}],note:''});
+ check(approved.status===200,'财务仍可审核销售提交的合同');
+ const invoice=await req('a','/api/finance',{action:'request_invoice',projectId:quick.id,version:approved.data.book.version,amountCents:100000,title:'模拟客户',taxNo:'TRIAL-TAX',remark:'测试申请'});
+ check(invoice.status===200 && invoice.data.book.invoices.length===1,'销售保留必要开票申请权限');
+ check((await req('a','/api/finance',{action:'finance_memo',projectId:quick.id,version:invoice.data.book.version,note:'attack'})).status===403,'销售仍不能维护财务内部备注');
+ const taskCreate=await req('manager','/api/tasks',{action:'create',data:{title:'跟进独立任务测试',request:'确认客户需求',desk:'sales',dueDate:'2026-12-05',region:'全部分部',projectId:quick.id,assigneeId:'a'}});
+ check(taskCreate.status===200,'可向项目负责人下发关联任务');const taskId=taskCreate.data.task.id;
+ const feedback=await req('a','/api/tasks',{action:'feedback',id:taskId,version:1,status:'待验收',result:'任务已完成'});
+ const accepted=await req('manager','/api/tasks',{action:'accept',id:taskId,version:feedback.data.task.version,note:''});
+ check(accepted.status===200&&JSON.parse(db.prepare('SELECT data FROM projects WHERE id=?').get(quick.id).data).lastFollowupAt===quick.lastFollowupAt,'完成任务不刷新真实跟进时间');
+ const current=(await req('manager')).data.projects.find(p=>p.id===quick.id);
+ const reassigned=await req('manager','/api/workspace',{action:'update',id:quick.id,version:current.version,data:{...current,ownerMemberId:'b',owner:'b'}});
+ check(reassigned.status===200&&reassigned.data.project.lastFollowupAt===quick.lastFollowupAt,'修改负责人不改变最近真实跟进');
+ check((await req('a','/api/workspace',second)).status===404,'转交后原销售连重试旧跟进请求也不能访问');
+ check(db.prepare('SELECT count(*) n FROM project_followups WHERE project_id=?').get(quick.id).n===3,'任务与负责人变化不额外制造跟进记录');
+ check((await req('a')).data.projects.some(p=>p.id==='a'),'历史项目仍可读取');
+
+ const bp=await req('a','/api/workspace',{action:'create',data:{name:'阶段B结果与复查'}});let lifecycle=bp.data.project;
+ check(lifecycle.businessStatus==='跟进中','新项目业务状态默认跟进中');
+ const priorFollowup=await req('a','/api/workspace',{action:'followup',id:lifecycle.id,version:lifecycle.version,content:'状态变化前的真实联系',nextDate:'2020-01-01',requestId:randomUUID()});lifecycle=priorFollowup.data.project;const priorRealAt=lifecycle.lastFollowupAt;
+
+ const outcome=(actor,body)=>req(actor,'/api/outcomes',body);
+ const change=(status,reason,actor='a')=>outcome(actor,{action:'status',projectId:lifecycle.id,version:lifecycle.version,status,reason});
+ const reason={categoryId:'budget',explanation:'客户预算尚未审批',improvement:'提前确认资金',competitor:'',reviewDate:''};
+ check((await change('已暂停')).status===400,'暂停缺少原因不能保存');check((await change('已丢单',{categoryId:'price',explanation:' '})).status===400,'丢单空白说明不能保存');
+ check((await change('已暂停',{...reason,categoryId:'forged'})).status===400,'伪造分类被拒绝');
+ check((await req('a','/api/workspace',{action:'update',id:lifecycle.id,version:lifecycle.version,data:{...lifecycle,businessStatus:'已暂停'}})).status===400,'普通编辑不能绕过原因校验');
+ check((await req('a','/api/workspace',{action:'workflow',id:lifecycle.id,version:lifecycle.version,note:'绕过',data:{...lifecycle,stage:'已丢单'}})).status===400,'旧阶段字段不能绕过原因校验');
+ check((await req('a','/api/workspace',{action:'create',data:{name:'直接新建丢单',businessStatus:'已丢单'}})).status===400,'新建不能跳过状态原因流程');
+ check((await change('已暂停',reason,'finance')).status===403,'财务不能修改销售状态');check((await change('已暂停',reason,'b')).status===404,'其他销售不能修改项目状态');
+ let transition=await change('已暂停',reason);check(transition.status===200,'销售无需管理审批直接保存暂停');lifecycle=transition.data.project;
+ let snap=(await req('a','/api/outcomes?projectId='+lifecycle.id)).data;const original=snap.outcomes[0];
+ check(original.ownerMemberId==='a'&&original.actorId==='a'&&original.explanation===reason.explanation,'原因记录稳定负责人操作人与原始说明');
+ check(lifecycle.lastFollowupAt===priorRealAt,'暂停状态变化不冒充真实跟进');
+ check(db.prepare('SELECT count(*) n FROM notifications WHERE project_id=?').get(lifecycle.id).n===2,'状态变化通知所有管理授权成员');
+ check((await req('finance','/api/outcomes?projectId='+lifecycle.id)).data.outcomes.length===1,'财务可读取全公司项目原因');
+ check((await req('b','/api/outcomes?memberId=a')).status===403,'销售不能读取他人结果档案');check((await req('finance','/api/outcomes?memberId=a')).status===403,'财务项目权限不扩大为个人档案权限');
+ check((await req('a','/api/outcomes')).data.history.paused.projects===1,'个人暂停独立项目数正确');
+ let queue=(await req('manager','/api/outcomes')).data;check(!queue.queue.some(q=>q.projectId===lifecycle.id),'新暂停未到周期不进入复查');
+ // Simulate elapsed time exclusively in this disposable fixture.
+ let storedPause=JSON.parse(db.prepare('SELECT data FROM projects WHERE id=?').get(lifecycle.id).data);storedPause.statusChangedAt='2020-01-01T00:00:00Z';db.prepare('UPDATE projects SET data=? WHERE id=?').run(JSON.stringify(storedPause),lifecycle.id);
+ check((await req('manager','/api/outcomes')).data.queue.some(q=>q.projectId===lifecycle.id),'未指定日期的暂停按周期进入复查');
+ check((await outcome('a',{action:'review-policy',days:14})).status===403,'销售不能改管理复查周期');
+ check((await outcome('manager',{action:'review-policy',days:14})).status===200,'管理可配置复查周期');check((await req('manager','/api/outcomes')).data.reviewDays===14,'复查周期已持久化');
+ const reviewed=await outcome('manager',{action:'review',projectId:lifecycle.id,version:lifecycle.version,reviewAction:'request_details',content:'请补充客户预计预算日期',nextReviewDate:'2099-01-01'});check(reviewed.status===200,'管理可要求补充说明');lifecycle=reviewed.data.project;
+ check((await req('manager','/api/outcomes')).data.queue.every(q=>q.projectId!==lifecycle.id),'未来明确复查日期不会提前提醒');
+ check((await outcome('finance',{action:'revise',projectId:lifecycle.id,version:lifecycle.version,outcomeId:original.id,reason})).status===403,'财务不能更正销售原因');
+ const corrected=await outcome('a',{action:'revise',projectId:lifecycle.id,version:lifecycle.version,outcomeId:original.id,reason:{...reason,explanation:'客户审批预计下月完成',reviewDate:'2020-01-01'}});check(corrected.status===200,'销售可补充自己的原因');lifecycle=corrected.data.project;
+ snap=(await req('a','/api/outcomes?projectId='+lifecycle.id)).data;
+ check(snap.outcomes[0].explanation===reason.explanation&&snap.outcomes[0].revisions[0].data.explanation==='客户审批预计下月完成','更正追加历史不覆盖原始原因');
+ check((await req('manager','/api/outcomes')).data.queue.some(q=>q.projectId===lifecycle.id),'明确复查日期到期正确提醒');
+ let restored=await outcome('manager',{action:'review',projectId:lifecycle.id,version:lifecycle.version,reviewAction:'reactivate',content:'恢复并联系客户'});check(restored.status===200&&restored.data.project.businessStatus==='跟进中','管理可直接恢复项目');lifecycle=restored.data.project;
+ check((await req('a','/api/outcomes?projectId='+lifecycle.id)).data.outcomes.length===1,'恢复项目不删除暂停原因');
+ transition=await change('已暂停',{...reason,explanation:'再次等待预算'});check(transition.status===200,'第二次暂停可保存');lifecycle=transition.data.project;
+ let mine=(await req('a','/api/outcomes')).data;check(mine.history.paused.events===2&&mine.history.paused.projects===1,'多次暂停事件独立但项目数去重');
+ transition=await change('已丢单',{categoryId:'competitor',explanation:'竞争对手中标'});check(transition.status===200,'暂停项目可记录丢单原因');lifecycle=transition.data.project;
+ mine=(await req('a','/api/outcomes')).data;check(mine.history.lost.events===1&&mine.history.paused.events===2,'暂停与丢单分别统计');
+ const move=await req('manager','/api/workspace',{action:'update',id:lifecycle.id,version:lifecycle.version,data:{...lifecycle,ownerMemberId:'b',owner:'b',name:'转交后的私密名称'}});check(move.status===200,'有原因历史的项目仍可转交');lifecycle=move.data.project;
+ check((await req('a','/api/outcomes?projectId='+lifecycle.id)).status===404,'转交后原销售不能访问当前项目原因接口');
+ mine=(await req('a','/api/outcomes')).data;check(mine.history.lost.events===1&&mine.outcomes.every(o=>o.ownerMemberId==='a')&&!JSON.stringify(mine).includes('转交后的私密名称'),'原销售仅保留任期快照且不泄露当前名称');
+ check((await req('b','/api/outcomes')).data.outcomes.length===0,'新负责人不能把旧原因计入本人结果档案');
+ check((await outcome('b',{action:'revise',projectId:lifecycle.id,version:lifecycle.version,outcomeId:original.id,reason})).status===403,'新负责人不能改写前任原因');
+ check((await req('manager','/api/outcomes?memberId=a')).data.history.lost.events===1,'管理可按员工查看历史结果');
+ const postTransfer=await outcome('manager',{action:'revise',projectId:lifecycle.id,version:lifecycle.version,outcomeId:original.id,reason:{...reason,explanation:'POST-TRANSFER-PRIVATE-UPDATE'}});check(postTransfer.status===200,'管理可继续更正旧原因并保留原始归属');lifecycle=postTransfer.data.project;
+ check(!JSON.stringify((await req('a','/api/outcomes')).data).includes('POST-TRANSFER-PRIVATE-UPDATE'),'原销售任期快照不泄露转交后的原因补充');
+ check(JSON.stringify((await req('manager','/api/outcomes?projectId='+lifecycle.id)).data).includes('POST-TRANSFER-PRIVATE-UPDATE'),'管理仍能查看完整更正历史');
+
+ const won=await change('已成交',undefined,'b');check(won.status===200,'新负责人可以正常修改成交状态');lifecycle=won.data.project;
+ check((await req('b','/api/outcomes')).data.counts.won>=1,'成交项目进入当前负责人计数');
+ const historicalCount=db.prepare('SELECT count(*) n FROM project_outcome_events WHERE project_id=?').get(lifecycle.id).n;
+ const collision=await Promise.all([change('已暂停',reason,'b'),change('已丢单',{categoryId:'other',explanation:'其他情况'},'b')]);
+ check(collision.filter(r=>r.status===200).length===1&&collision.filter(r=>r.status===409).length===1,'并发状态更新只接受一个版本');
+ check(db.prepare('SELECT count(*) n FROM project_outcome_events WHERE project_id=?').get(lifecycle.id).n===historicalCount+1,'并发失败不残留原因事件');
+ // A forced SQL failure proves the status write and reason insert roll back together.
+ lifecycle=collision.find(r=>r.status===200).data.project;
+ const restored2=await change('跟进中',undefined,'b');lifecycle=restored2.data.project;
+ db.exec("CREATE TRIGGER fail_outcome BEFORE INSERT ON project_outcome_events BEGIN SELECT RAISE(ABORT,'qa atomicity'); END");
+ const failed=await change('已暂停',reason,'b');check(failed.status===503,'数据库故障返回失败');
+ const afterFailure=JSON.parse(db.prepare('SELECT data FROM projects WHERE id=?').get(lifecycle.id).data);check(afterFailure.businessStatus==='跟进中','原因保存失败时项目状态原子回滚');check(afterFailure.lastFollowupAt===priorRealAt,'原因更正、管理复查和恢复均不刷新真实跟进');db.exec('DROP TRIGGER fail_outcome');
+
+ const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const ago=n=>new Date(Date.parse(day+'T00:00:00Z')-n*86400000).toISOString().slice(0,10);
+ let boundary={...afterFailure,businessStatus:'已暂停',pauseReviewDate:null,pauseReviewedAt:null,statusChangedAt:ago(13)+'T00:00:00+08:00'};
+ db.prepare('UPDATE projects SET data=? WHERE id=?').run(JSON.stringify(boundary),lifecycle.id);
+ check(!(await req('manager','/api/outcomes')).data.queue.some(q=>q.projectId===lifecycle.id),'14天复查周期第13天不提前提醒');
+ boundary.statusChangedAt=ago(14)+'T00:00:00+08:00';db.prepare('UPDATE projects SET data=? WHERE id=?').run(JSON.stringify(boundary),lifecycle.id);
+ check((await req('manager','/api/outcomes')).data.queue.find(q=>q.projectId===lifecycle.id)?.dueDate===day,'按上海自然日达到周期当天进入复查');
+ check((await outcome('manager',{action:'review-policy',days:0})).status===400,'复查周期不能为0');
+ check((await req('manager','/api/outcomes?memberId=missing')).status===404,'不存在的员工档案不能查询');
+ console.log(JSON.stringify({passed:count,database}));
+}finally{server.kill('SIGTERM');db.close();writeFileSync(join(dir,'server.log'),log);}

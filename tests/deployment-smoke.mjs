@@ -284,7 +284,7 @@ try {
     type: '',
     source: '',
     owner: '周明',
-    stage: '已暂停',
+    stage: '项目筛选',
     amount: 1,
     customer: '',
     designer: '',

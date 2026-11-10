@@ -1,4 +1,6 @@
 "use client";
+import { ProjectOutcomes, ProjectResults, PauseReviewReminder } from './outcome-panels';
+import { statusOf, BUSINESS_STATUSES } from './outcome-model';
 import { ProjectBusiness } from "./project-business";
 import MeetingCenter from "./meeting-center";
 import { FinanceOperationsPanel } from "./finance-operations-panel";
@@ -103,6 +105,7 @@ const ALL_NAV = [
   { id: "finance", label: "合同与票款", icon: Wallet },
   { id: "members", label: "人员管理", icon: Users },
   { id: "sales", label: "销售考核", icon: ClipboardCheck },
+  { id: "results", label: "我的项目结果", icon: History },
   { id: "guide", label: "跟进指南", icon: History },
   { id: "products", label: "品牌与产品", icon: Package },
   { id: "settings", label: "组织与设置", icon: Settings },
@@ -327,8 +330,9 @@ export default function Workspace({
   })();
   allowed.push("messages");
   if (isManager(viewMember) || viewMember.role === "sales")
-    allowed.push("sales");
+    allowed.push("sales", "results");
   const NAV = ALL_NAV.filter((n) => allowed.includes(n.id)).map((n) =>
+    n.id === "results" && isManager(viewMember) ? {...n,label:"员工结果与复查"} :
     n.id === "overview"
       ? { ...n, label: roleInfo(viewMember.role).portal }
       : n.id === "tasks"
@@ -895,6 +899,7 @@ export default function Workspace({
         (a, b) =>
           risk(b, config.staleDays).level - risk(a, config.staleDays).level,
       );
+  const [businessFilter,setBusinessFilter] = useState("全部状态");
   const filtered = scopeProjects.filter(
     (p) =>
       (!search ||
@@ -914,6 +919,7 @@ export default function Workspace({
           .toLowerCase()
           .includes(search.toLowerCase())) &&
       (owner === "全部负责人" || p.owner === owner) &&
+      (businessFilter === "全部状态" || statusOf(p) === businessFilter) &&
       (stage === "全部阶段" || p.stage === stage) &&
       (filter === "全部项目" ||
         (filter === "进行中" && isActive(p)) ||
@@ -1190,7 +1196,8 @@ export default function Workspace({
         "类型",
         "来源",
         "负责人",
-        "阶段",
+        "业务状态",
+        "详细工程阶段",
         "预计金额（万元）",
         "业主",
         "设计院",
@@ -1207,6 +1214,7 @@ export default function Workspace({
         p.type,
         p.source,
         p.owner,
+        statusOf(p),
         p.stage,
         p.amount,
         p.customer,
@@ -1249,7 +1257,7 @@ export default function Workspace({
         <thead>
           <tr>
             <th>项目名称 / 产品机会</th>
-            <th>当前阶段</th>
+            <th>业务状态 / 工程阶段</th>
             <th>主跟 / 协作</th>
             <th>下次跟进</th>
             {!compact && <th>预计金额</th>}
@@ -1279,7 +1287,8 @@ export default function Workspace({
                 </td>
                 <td>
                   <span className={"stage-dot s" + STAGES.indexOf(p.stage)} />
-                  {p.stage}
+                  {statusOf(p)}
+                  <div className="cell-sub">{p.stage}</div>
                 </td>
                 <td>
                   <span className="owner-cell">
@@ -1712,7 +1721,7 @@ export default function Workspace({
             </div>
           ) : (
             <>
-              {!["overview", "messages", "members", "sales"].includes(tab) && (
+              {!["overview", "messages", "members", "sales", "results"].includes(tab) && (
                 <div className="workspace-scope">
                   <span>
                     <Users size={15} />
@@ -1758,6 +1767,8 @@ export default function Workspace({
                   <small>演示账号与真实成员完全分开。</small>
                 </div>
               )}
+              {tab === "overview" && isManager(viewMember) && !demo && <PauseReviewReminder request={workspaceFetch} projects={projects} open={()=>navigate("results")} />}
+              {tab === "results" && <ProjectResults member={viewMember} request={workspaceFetch} projects={projects} demo={demo} onOpen={p=>{setDetail(p.id);setDetailTab("状态与原因");}} />}
               {tab === "overview" && (
                 <RoleDashboard
                   member={viewMember}
@@ -1938,10 +1949,11 @@ export default function Workspace({
                       value={stage}
                       onChange={(e) => setStage(e.target.value)}
                     >
-                      {["全部阶段", ...STAGES].map((s) => (
+                      {["全部阶段", ...STAGES.filter(s=>!["已暂停","已丢单","已结项"].includes(s))].map((s) => (
                         <option key={s}>{s}</option>
                       ))}
                     </select>
+                    <select aria-label="业务状态筛选" value={businessFilter} onChange={e=>setBusinessFilter(e.target.value)}><option>全部状态</option>{BUSINESS_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
                     <span className="result-count" role="status">
                       共 {filtered.length} 个项目
                     </span>
@@ -2065,12 +2077,12 @@ export default function Workspace({
                     })}
                   </div>
                   <div className="closed-summary">
-                    已结项{" "}
-                    {scopeProjects.filter((p) => p.stage === "已结项").length}{" "}
+                    已成交{" "}
+                    {scopeProjects.filter((p) => statusOf(p) === "已成交").length}{" "}
                     个 · 已丢单{" "}
-                    {scopeProjects.filter((p) => p.stage === "已丢单").length}{" "}
+                    {scopeProjects.filter((p) => statusOf(p) === "已丢单").length}{" "}
                     个 · 已暂停{" "}
-                    {scopeProjects.filter((p) => p.stage === "已暂停").length}{" "}
+                    {scopeProjects.filter((p) => statusOf(p) === "已暂停").length}{" "}
                     个
                     <button
                       className="text-button"
@@ -2326,7 +2338,7 @@ export default function Workspace({
             </div>
             <div className="detail-title">
               <div>
-                <Badge tone="green">{selected.stage}</Badge>
+                <Badge tone="green">{statusOf(selected)}</Badge>
                 {demo && <Badge>演示项目</Badge>}
               </div>
               <h2
@@ -2375,6 +2387,7 @@ export default function Workspace({
                       <Pencil size={15} />
                       编辑项目
                     </button>
+                    <button className="button" onClick={()=>setDetailTab("状态与原因")}>修改状态</button>
                   </>
                 )}
               </div>
@@ -2413,8 +2426,9 @@ export default function Workspace({
             </section>
             <div className="detail-tabs" role="group" aria-label="项目详情内容">
               {[
-                "阶段推进",
                 "协作动态",
+                "状态与原因",
+                "阶段推进",
                 "产品机会",
                 ...(mayViewBook(selected,viewMember) ? ["合同与票款"] : []),
                 "商务与交付",
@@ -2444,6 +2458,7 @@ export default function Workspace({
                 (detailTab === "阶段推进" ? "workflow-detail-content" : "")
               }
             >
+              {detailTab === "状态与原因" && <ProjectOutcomes project={selected} member={viewMember} request={workspaceFetch} demo={demo} onChanged={(p,e)=>{setProjects(ps=>ps.map(x=>x.id===p.id?p:x));setEvents(es=>[e,...es]);setNotice("状态与原因已保存");}} />}
               {detailTab === "阶段推进" && (
                 <StageWorkspace
                   key={selected.id}
@@ -2982,7 +2997,7 @@ export default function Workspace({
                     setDraft({ ...draft, stage: e.target.value })
                   }
                 >
-                  {STAGES.map((s) => (
+                  {STAGES.filter(s=>!["已暂停","已丢单","已结项"].includes(s)||s===draft.stage).map((s) => (
                     <option key={s}>{s}</option>
                   ))}
                 </select>

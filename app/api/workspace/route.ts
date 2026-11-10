@@ -1,3 +1,4 @@
+import { statusOf } from '../../outcome-model';
 import { taskAccessible } from '../../server/resource-access';
 import {canViewSupplier} from '../../finance-operations';
 import { z } from 'zod';
@@ -239,6 +240,7 @@ export async function POST(req: Request) {
       'id' | 'version' | 'updatedAt'
     >;
     let before: Project | null = null;
+    if (body.action === 'create' && ((body.data?.businessStatus && body.data.businessStatus !== '跟进中') || ['已暂停','已丢单','已结项'].includes(parsed.stage))) throw new HttpError(400, '请先创建跟进中的项目，再通过状态窗口记录结果');
     if (body.action === 'create') {
       if (!canCreateProject(ctx.member))
         throw new HttpError(403, '当前岗位不能创建销售项目');
@@ -261,6 +263,7 @@ export async function POST(req: Request) {
       }
     } else {
       before = await loadProject(ctx, z.string().min(1).max(100).parse(body.id));
+      if ((body.data?.businessStatus !== undefined && body.data.businessStatus !== statusOf(before)) || (parsed.stage !== before.stage && ['已暂停','已丢单','已结项'].includes(parsed.stage))) throw new HttpError(400, '请通过项目状态窗口修改业务状态并记录原因');
       if (before.version !== body.version)
         throw new HttpError(409, '项目已在其他窗口更新，请刷新后重试');
       if (

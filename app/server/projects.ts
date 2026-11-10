@@ -1,3 +1,4 @@
+import { statusOf } from '../outcome-model';
 import { hasDesk } from "../access";
 import { departmentDesk } from "../workflow";
 import { Context, HttpError } from "./auth";
@@ -30,6 +31,8 @@ export type ProjectRow = {
 };
 export const projectDTO = (r: ProjectRow): Project => ({
   ...JSON.parse(r.data),
+  businessStatus: statusOf(JSON.parse(r.data)),
+  statusChangedAt: JSON.parse(r.data).statusChangedAt || r.updated_at,
   id: r.id,
   version: r.version,
   updatedAt: r.updated_at,
@@ -262,7 +265,7 @@ export async function projectWrite(
     updatedAt: ignoredDate,
     ...input
   } = data;
-  const stored = {...input, createdAt: before?.createdAt || (before ? undefined : now), lastFollowupAt: before?.lastFollowupAt, latestFollowupContent: before?.latestFollowupContent};
+  const stored = {...input, businessStatus: (before ? statusOf(before) : '跟进中') as Project['businessStatus'], statusChangedAt: before?.statusChangedAt, pauseReviewDate: before?.pauseReviewDate, pauseReviewedAt: before?.pauseReviewedAt, createdAt: before?.createdAt || (before ? undefined : now), lastFollowupAt: before?.lastFollowupAt, latestFollowupContent: before?.latestFollowupContent};
   const actor = `${ctx.member.name}（${roleInfo(ctx.member.role).name}）`;
   const first = before
     ? ctx.db

@@ -1,0 +1,26 @@
+import {resolve} from 'node:path';
+import {mkdirSync} from 'node:fs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.QA_URL||'http://127.0.0.1:5291',out=resolve(process.env.QA_OUTPUT||'work/v2b-ui-qa');
+if(!/^http:\/\/127\.0\.0\.1:\d+$/.test(base)||!process.env.QA_PASSWORD)throw Error('仅限本机模拟库，需指定 QA_PASSWORD');mkdirSync(out,{recursive:true});
+const browser=await chromium.launch({headless:true,channel:'chrome'});let passed=0;const errors=[];
+const check=(ok,label)=>{if(!ok)throw Error(label);passed++;console.log('PASS '+label);};
+async function login(email,width=1440){const context=await browser.newContext({viewport:{width,height:width<600?844:1000}});const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/login/sales');await page.getByLabel('邮箱或手机号').fill(email);await page.getByLabel('密码',{exact:true}).fill(process.env.QA_PASSWORD);await page.getByRole('button',{name:'登录工作区',exact:true}).click();await page.waitForURL('**/work/**');return page;}
+const name='阶段B浏览器验收-'+Date.now();
+try{
+ const sales=await login('trial-sales@example.invalid',390);
+ await sales.getByRole('button',{name:'新建项目',exact:true}).first().click();await sales.getByLabel('项目名称').fill(name);await sales.getByRole('button',{name:'保存项目',exact:true}).click();await sales.getByRole('heading',{name,exact:true}).waitFor();
+ await sales.getByRole('button',{name:'修改状态',exact:true}).click();await sales.getByLabel('修改业务状态').selectOption('已暂停');await sales.getByRole('heading',{name:'记录暂停原因',exact:true}).waitFor();
+ await sales.getByRole('button',{name:'保存状态',exact:true}).click();check(await sales.getByLabel('主要原因分类').evaluate(e=>!e.checkValidity()),'手机暂停原因分类必填');
+ await sales.getByLabel('主要原因分类').selectOption('budget');await sales.getByRole('button',{name:'保存状态',exact:true}).click();check(await sales.getByLabel('具体情况说明').evaluate(e=>!e.checkValidity()),'手机具体情况说明必填');
+ await sales.getByLabel('具体情况说明').fill('客户预算预计下月确认，先暂停');await sales.getByText('补充信息（选填）',{exact:true}).click();await sales.getByLabel('预计重新启动 / 复查日期').fill('2020-01-01');await sales.screenshot({path:out+'/mobile-pause-dialog.png'});await sales.getByRole('button',{name:'保存状态',exact:true}).click();await sales.getByText('状态与原因已保存',{exact:true}).waitFor();check(await sales.getByLabel('修改业务状态').inputValue()==='已暂停','手机暂停立即保存无需审批');
+ await sales.getByRole('button',{name:'补充 / 更正',exact:true}).click();await sales.getByLabel('具体情况说明').fill('补充确认：客户月底召开预算会议');await sales.getByRole('button',{name:'保存更正',exact:true}).click();await sales.getByText('补充确认：客户月底召开预算会议',{exact:true}).waitFor();check(await sales.getByText('客户预算预计下月确认，先暂停',{exact:true}).isVisible(),'更正后原始原因仍可查看');await sales.screenshot({path:out+'/mobile-reason-history.png'});
+ await sales.getByRole('button',{name:'关闭项目详情',exact:true}).click();await sales.getByRole('button',{name:'打开导航',exact:true}).click();await sales.getByRole('button',{name:'我的项目结果',exact:true}).click();await sales.getByRole('heading',{name:'历史暂停',exact:true}).waitFor();check(await sales.getByText('暂停 · '+name,{exact:true}).isVisible(),'销售次级入口显示自己的暂停历史');
+ await sales.screenshot({path:out+'/mobile-results.png'});check(await sales.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'手机结果页没有横向溢出');
+ const manager=await login('trial-manager@example.invalid');await manager.getByRole('button',{name:'查看暂停复查',exact:true}).click();await manager.locator('.review-row').filter({hasText:name}).getByRole('button',{name:'打开复查'}).click();await manager.getByLabel('复查处理').selectOption('objection');await manager.getByLabel('管理意见').fill('请核实预算会议结果并补充说明');await manager.getByRole('button',{name:'保存复查意见'}).click();await manager.getByText('请核实预算会议结果并补充说明',{exact:true}).waitFor();check(true,'管理可以提出异议并保存记录');
+ await manager.getByLabel('复查处理').selectOption('reactivate');await manager.getByLabel('管理意见').fill('恢复项目，继续跟进预算');await manager.getByRole('button',{name:'保存复查意见'}).click();await manager.getByLabel('修改业务状态').selectOption('已成交');await manager.getByRole('button',{name:'保存状态',exact:true}).click();await manager.getByRole('heading',{name:'修改项目状态',exact:true}).waitFor({state:'hidden'});check(await manager.getByLabel('修改业务状态').inputValue()==='已成交','管理恢复后仍可正常修改成交状态');
+ await manager.locator('.project-outcomes').getByText('客户预算预计下月确认，先暂停',{exact:true}).waitFor();check(true,'恢复和成交后暂停历史仍保留');await manager.screenshot({path:out+'/management-history.png'});
+ await manager.getByRole('button',{name:'关闭项目详情'}).click();await manager.getByLabel('查看员工').selectOption('trial-sales');await manager.getByText('暂停 · '+name,{exact:true}).waitFor();check(true,'管理可以按销售查看结果');
+ const finance=await login('trial-finance@example.invalid');await finance.getByRole('button',{name:'项目协同',exact:true}).click();await finance.getByRole('button',{name,exact:true}).click();await finance.getByRole('button',{name:'状态与原因',exact:true}).click();await finance.getByText('客户预算预计下月确认，先暂停',{exact:true}).waitFor();check(await finance.getByLabel('修改业务状态').count()===0&&await finance.getByRole('button',{name:'补充 / 更正',exact:true}).count()===0,'财务可查看原因但没有编辑入口');
+ check(errors.length===0,'浏览器无运行时错误');console.log(JSON.stringify({passed,name}));
+}finally{await browser.close();}

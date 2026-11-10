@@ -34,7 +34,7 @@ export async function mutateCash(ctx:Context,raw:Record<string,unknown>){
   if(!canFinance(ctx.member)&&ctx.member.role!=='sales')throw new HttpError(403,'管理只读，收款计划由销售提交或财务确认');
   const old=b.plans.find(v=>v.id===input.id);if(input.id&&!old)throw new HttpError(404,'收款计划不存在');
   if(old&&!canFinance(ctx.member))throw new HttpError(403,'已有收款计划由财务调整');
-  if(canFinance(ctx.member)&&b.reviewStatus==='已审核'&&safeSum([input.amountCents,...b.plans.filter(v=>v.id!==old?.id&&v.cashStatus!=='draft').map(v=>v.amountCents)])>b.contractAmountCents)throw new HttpError(400,'确认后的收款计划不能超过已审核合同金额，请核实原计划');
+  if(canFinance(ctx.member)&&b.reviewStatus==='已审核'&&safeSum([input.amountCents,...b.plans.filter(v=>v.id!==old?.id&&v.cashStatus!=='draft').map(v=>v.amountCents)])!==b.contractAmountCents)throw new HttpError(400,'确认后的收款计划合计必须等于已审核合同金额，请核实原计划');
   const received=paid(b.receipts.filter(v=>v.planId===old?.id));if(input.amountCents<received)throw new HttpError(400,'计划金额不能低于已收金额');
   const r={...input,id:old?.id||crypto.randomUUID(),cashStatus:canFinance(ctx.member)?'confirmed' as const:'draft' as const,history:[...(old?.history||[]),audit(old?'修改收款计划':'新增收款信息',old)]};if(old)b.plans=b.plans.map(v=>v.id===old.id?r:v);else b.plans.push(r);
  }else if(action==='purchase_order'){

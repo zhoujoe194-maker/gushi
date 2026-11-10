@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const dir=mkdtempSync(join(tmpdir(),'gushi-cash-math-'));
 for(const name of ['cash-model','cash-forecast']){const js=ts.transpileModule(readFileSync('app/'+name+'.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replaceAll("'./cash-model'","'./cash-model.mjs'");writeFileSync(join(dir,name+'.mjs'),js);}
-const {cashForecast,projectFunding}=await import(pathToFileURL(join(dir,'cash-forecast.mjs'))),{safeSum,suggestedDue}=await import(pathToFileURL(join(dir,'cash-model.mjs')));
+const {cashForecast,projectFunding}=await import(pathToFileURL(join(dir,'cash-forecast.mjs'))),{safeSum,suggestedDue,projectLines}=await import(pathToFileURL(join(dir,'cash-model.mjs')));
 let count=0;const check=(v,label)=>{if(!v)throw Error(label);console.log('PASS '+label);count++;};
 const day='2026-11-10',company={version:1,plans:[],history:[],opening:{date:day,amountCents:10000}};
 const line=(id,direction,amount,dueDate,certainty='confirmed')=>({id,projectId:'p',projectName:'项目',label:id,category:'测试',direction,amountCents:amount,paidCents:0,remainingCents:amount,dueDate,certainty,status:'confirmed',payments:[],source:'fixture'});
@@ -35,4 +35,14 @@ check(suggestedDue(supplier,p)==='2026-11-17','发货前付款按预计发货减
 supplier.cashTerms.trigger='到货付款';check(suggestedDue(supplier,p)==='2026-11-29','到货条件优先实际到货加账期');
 supplier.cashTerms.trigger='验收后付款';check(suggestedDue(supplier,p)==='2026-12-03','验收后付款支持预计验收');
 supplier.cashTerms.trigger='预付款';check(suggestedDue(supplier,p)===supplier.dueDate,'预付款不因货期改变自动改日期');
+const financeJs=ts.transpileModule(readFileSync('app/finance-model.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace("import { today } from './model';", "const today=()=> '2026-11-10';");
+writeFileSync(join(dir,'finance.mjs'),financeJs);
+const {totals,salesBook,emptyBook}=await import(pathToFileURL(join(dir,'finance.mjs')));
+const book={...emptyBook('p'),reviewStatus:'已审核',plans:[{id:'c',label:'确认',amountCents:100000,dueDate:'2026-11-01'},{id:'d',label:'草稿',amountCents:50000,dueDate:'2026-11-01',cashStatus:'draft'}],receipts:[{id:'r',planId:'c',amountCents:40000,date:'2026-11-01'}]};
+check(totals(book).scheduled===100000&&totals(book).balance===60000,'D0 旧台账排除草稿且部分收款只算余额');
+check(projectLines(book,{id:'p',name:'项目'}).filter(l=>l.status==='confirmed').reduce((sum,l)=>sum+l.remainingCents,0)===totals(book).balance,'D0 新旧财务页面正式应收一致');
+check(totals(salesBook(book)).balance===60000,'D0 销售投影保留草稿状态');
+book.plans[1].cashStatus='confirmed';check(totals(book).balance===110000,'D0 确认计划后应收增加');
+book.receipts[0].voidAt='2026-11-10';check(totals(book).balance===150000,'D0 冲销恢复应收');
+book.reviewStatus='草稿';check(totals(book).balance===50000,'D0 独立确认计划不依赖合同审核状态');
 console.log(JSON.stringify({passed:count}));

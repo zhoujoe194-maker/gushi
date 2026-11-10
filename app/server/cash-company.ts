@@ -22,11 +22,15 @@ export async function companyMutation(s:CashStore,raw:Record<string,unknown>){
   const p=b.plans.find(p=>p.id===raw.id&&p.category==='工资'&&p.status!=='cancelled');if(!p)throw new HttpError(400,'请选择上月工资计划');const target=nextMonth(p.month),dueDate=calendarDate.parse(raw.dueDate);const plan:CompanyPlan={...structuredClone(p),id:crypto.randomUUID(),month:target,dueDate,status:'draft',payments:[],seriesId:undefined,history:[audit('参考上月工资生成草稿，待财务确认')]};b.plans.push(plan);validateOverlap(b);return;
  }
  if(raw.action!=='company_plan')throw new HttpError(400,'不支持的公司费用操作');
- const input=z.object({category:z.enum(EXPENSE_CATEGORIES),month,label:text.min(1),amountCents:z.number().int().positive().max(1e12),dueDate:calendarDate,certainty:z.enum(['confirmed','expected','uncertain']).default('confirmed'),status:z.enum(['draft','confirmed','cancelled']).default('draft'),includesBenefits:z.boolean().default(false),note:text.default(''),repeatCount:z.number().int().min(1).max(24).default(1)}).parse(raw);
+ const input=z.object({category:z.enum(EXPENSE_CATEGORIES),month,label:text.min(1),amountCents:z.number().int().positive().max(1e12),dueDate:calendarDate,certainty:z.enum(['confirmed','expected','uncertain']).default('confirmed'),status:z.enum(['draft','confirmed','cancelled','settled']).default('draft'),includesBenefits:z.boolean().default(false),note:text.default(''),repeatCount:z.number().int().min(1).max(24).default(1)}).parse(raw);
  const old=b.plans.find(p=>p.id===raw.id);if(raw.id&&!old)throw new HttpError(404,'费用计划不存在');
+ if(old?.status==='settled'){
+  if(input.status!=='settled')throw new HttpError(400,'已结清费用不能通过普通编辑重新打开，请先核实并冲销实际流水');
+  if(input.amountCents!==old.amountCents||input.month!==old.month||input.category!==old.category||input.dueDate!==old.dueDate||input.includesBenefits!==old.includesBenefits)throw new HttpError(400,'已结清记录仅允许修改名称、备注和说明');
+ }else if(input.status==='settled')throw new HttpError(400,'结清必须通过银行核销确认');
  if(old&&input.repeatCount!==1)throw new HttpError(400,'编辑单笔不能重复生成周期费用');
  if(input.category!=='工资'&&input.includesBenefits)throw new HttpError(400,'只有工资可标记包含社保公积金');
- if(old&&paid(old.payments)>0){if(input.amountCents<paid(old.payments)||input.status!=='confirmed'||input.category!==old.category||input.month!==old.month)throw new HttpError(400,'已支付记录不能改月份、类别、取消或将预算调低至实付以下；请先冲销流水');}
+ if(old&&old.status!=='settled'&&paid(old.payments)>0){if(input.amountCents<paid(old.payments)||input.status!=='confirmed'||input.category!==old.category||input.month!==old.month)throw new HttpError(400,'已支付记录不能改月份、类别、取消或将预算调低至实付以下；请先冲销流水');}
  const seriesId=input.repeatCount>1?crypto.randomUUID():old?.seriesId;
  for(let n=0;n<input.repeatCount;n++){
   const p:CompanyPlan={...input,id:old?.id||crypto.randomUUID(),month:nextMonth(input.month,n),dueDate:monthDate(nextMonth(input.dueDate.slice(0,7),n),Number(input.dueDate.slice(8))),direction:input.category==='其他收入'?'in':'out',payments:old?.payments||[],seriesId,history:[...(old?.history||[]),audit(old?'修改公司费用':'新增公司费用',old)]};

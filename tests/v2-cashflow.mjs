@@ -84,7 +84,7 @@ try{
 
  const company=async()=>(await req('finance','/api/cashflow')).data.company;
  const cp=async(body,actor='finance')=>post(actor,{version:(await company()).version,...body});
- const wage={action:'company_plan',category:'工资',month:'2026-10',label:'十月工资',amountCents:100000,dueDate:'2026-11-05',includesBenefits:true,status:'confirmed'};
+ const wage={action:'company_plan',category:'工资',month:'2026-10',label:'十月工资',amountCents:1000000,dueDate:'2026-11-05',includesBenefits:true,status:'confirmed'};
  check((await cp(wage,'manager')).status===403,'管理默认不能改工资预算');
  check((await cp(wage,'a')).status===403,'销售不能写公司工资');
  check((await cp(wage)).status===200,'财务登记跨月工资');
@@ -94,10 +94,15 @@ try{
  check((await cp({action:'company_copy',id:wp.id,dueDate:'2026-12-05'})).status===200,'参考上月生成下月工资');
  cb=await company();check(cb.plans.find(p=>p.month==='2026-11').status==='draft','复制工资必须待财务确认');
  check((await cp({action:'company_copy',id:wp.id,dueDate:'2026-12-05'})).status===400,'重复复制不新增第二份工资预算');
- const wagePay={action:'settle',direction:'out',reference:'WAGE-OCT',date:day,amountCents:95000,close:true,allocations:[{projectId:'',kind:'company',targetId:wp.id,amountCents:95000}]};
+ const wagePay={action:'settle',direction:'out',reference:'WAGE-OCT',date:day,amountCents:950000,close:true,allocations:[{projectId:'',kind:'company',targetId:wp.id,amountCents:950000}]};
  check((await post('finance',wagePay)).status===200,'实际工资少于预算可结清');
- cb=await company();check(cb.plans[0].amountCents===100000&&cb.plans[0].payments[0].amountCents===95000&&cb.plans[0].status==='settled','原预算和实发金额独立保留');
+ cb=await company();check(cb.plans[0].amountCents===1000000&&cb.plans[0].payments[0].amountCents===950000&&cb.plans[0].status==='settled','原预算和实发金额独立保留');
  check((await req('finance','/api/cashflow')).data.lines.find(l=>l.id===wp.id).remainingCents===0,'工资结清后剩余预算不继续算待付');
+
+ check((await cp({...wage,id:wp.id,status:'settled',note:'备注修订'})).status===200,'D0 结清后备注可修改');
+ check((await req('finance','/api/cashflow')).data.lines.find(l=>l.id===wp.id).remainingCents===0,'D0 编辑后差额不重新预测');
+ check((await cp({...wage,id:wp.id,status:'confirmed'})).status===400,'D0 API拒绝普通保存重新打开');
+ check((await company()).plans[0].payments[0].amountCents===950000,'D0 备注编辑保留实际工资');
  const next=cb.plans.find(p=>p.month==='2026-11');check((await cp({...wage,id:next.id,month:'2026-11',label:'十一月工资',dueDate:'2026-12-05',amountCents:110000})).status===200,'财务确认并调整复制工资预算');
  check((await post('finance',{...wagePay,reference:'WAGE-NOV',amountCents:112000,allocations:[{projectId:'',kind:'company',targetId:next.id,amountCents:112000}]})).status===200,'实发高于预算仍可核实结清且保留预算');
  check((await cp({action:'company_plan',category:'租金',month:'2026-11',label:'办公室',amountCents:80000,dueDate:'2026-11-30',status:'confirmed',repeatCount:4})).status===200,'有限次数生成周期费用');
@@ -111,7 +116,7 @@ try{
 
  const all=(await req('finance','/api/cashflow')).data;
  check(all.forecast.weeks.length===13&&Number.isSafeInteger(all.forecast.current),'接口返回13周并使用整数分余额');
- check(all.forecast.current===500000-12345-95000-112000,'现金从期初扣除当天实付，不重复叠加银行记录');
+ check(all.forecast.current===500000-12345-950000-112000,'现金从期初扣除当天实付，不重复叠加银行记录');
  check((await req('a','/api/cashflow?scenario=optimistic')).status===403,'情景切换不绕过公司现金权限');
  check((await req('manager','/api/cashflow?scenario=optimistic')).data.forecast.scenario==='optimistic','管理可读现金流情景');
  check((await req('finance','/api/cashflow?scenario=forged')).status===400,'非法情景被拒绝');
@@ -147,5 +152,14 @@ try{
  check(reviewed.status===200&&reviewed.data.book.receipts.length===2,'合同审核沿用计划ID且不丢既有实际收款');
  check((await edit('finance',{action:'customer_plan',label:'重复增加',amountCents:100,dueDate:day})).status===400,'已审核合同不允许重复增加超额收款计划');
  check((await req('finance','/api/finance',{action:'add_supplier',projectId:p.id,version:(await get()).book.version,supplier:'绕过',amountCents:100,dueDate:day,terms:'无订单'})).status===400,'旧采购接口不能绕过订单批次关联');
+
+ check((await cp({...wage,id:next.id,month:'2026-11',label:'十一月工资',dueDate:'2026-12-05',amountCents:110000,status:'settled',note:'超预算备注'})).status===200,'D0 超预算结清仍能保留原预算编辑备注');
+ const wageBank=(await req('finance','/api/cashflow')).data.bank.find(b=>b.reference==='WAGE-OCT');
+ check((await post('finance',{action:'void_bank',id:wageBank.id,reason:'D0核销更正'})).status===200,'D0 结清工资整笔冲销');
+ const reopened=(await company()).plans.find(p=>p.id===wp.id);
+ check(reopened.status==='confirmed'&&reopened.payments[0].voidAt,'D0 冲销明确恢复待付并保留原支付');
+ check((await req('finance','/api/cashflow')).data.lines.find(l=>l.id===wp.id).remainingCents===1000000,'D0 冲销后预测恢复预算未付金额');
+ check((await edit('finance',{action:'customer_plan',id:plan.id,label:plan.label,amountCents:49000,dueDate:day})).status===400,'D0 已审核合同不能单独减少确认计划形成差额');
+ check((await get(p.id,'a')).book.reviewStatus==='已审核','D0 销售项目收支保留旧合同审核状态');
  console.log(JSON.stringify({passed:count,database}));
 }finally{server.kill('SIGTERM');db.close();}

@@ -108,5 +108,44 @@ try{
  check((await req('a','/api/cashflow')).status===403,'工资计划与期初现金不泄露给销售');
  check((await req('manager','/api/cashflow')).data.company.plans.length>0,'管理可只读公司费用总额');
  check((await company()).plans[0].history.length>0,'预算修改历史保留');
+
+ const all=(await req('finance','/api/cashflow')).data;
+ check(all.forecast.weeks.length===13&&Number.isSafeInteger(all.forecast.current),'接口返回13周并使用整数分余额');
+ check(all.forecast.current===500000-12345-95000-112000,'现金从期初扣除当天实付，不重复叠加银行记录');
+ check((await req('a','/api/cashflow?scenario=optimistic')).status===403,'情景切换不绕过公司现金权限');
+ check((await req('manager','/api/cashflow?scenario=optimistic')).data.forecast.scenario==='optimistic','管理可读现金流情景');
+ check((await req('finance','/api/cashflow?scenario=forged')).status===400,'非法情景被拒绝');
+ check((await get()).funding.length===1&&!(await get(p.id,'a')).funding,'项目垫资仅财务和管理可读');
+ const beforePaid=(await get()).book.suppliers[0];
+ check((await settle([{projectId:p.id,kind:'supplier',targetId:sid,amountCents:10000}],10000,'SUPPLIER-PART')).status===200,'采购部分付款');
+ await edit('finance',{...delivery,id:batch.id,arrivalDate:'2026-12-15',expectedAcceptanceDate:'2026-12-20'});
+ const delayed=(await get()).book.suppliers[0];check(delayed.payments[0].amountCents===10000&&delayed.dueDate===beforePaid.dueDate,'延期不改变实付金额及原确认日期');
+ check((await get()).suggestions[0].dueDate==='2027-01-10','跨年延期重新建议月结日期');
+ check((await edit('finance',{...delivery,name:'第二批'})).status===200,'同项目支持多批交货');
+ const b2=(await get()).project.batches.find(b=>b.name==='第二批');
+ check((await edit('finance',{...supplier,batchId:b2.id,amountCents:50000,cashTerms:{...supplier.cashTerms,trigger:'预付款'}})).status===200,'第二批独立预付款计划不重复第一批金额');
+ check((await req('ops','/api/cashflow?mine=1')).data.projects.some(x=>x.id===p.id),'协作者从报销入口找到单独授权项目');
+ check((await edit('manager',{action:'grant',memberId:'ops',revoke:true})).status===200,'管理撤回报销权限');
+ check((await req('ops','/api/cashflow?projectId='+p.id)).status===404,'撤权后立即不能读取报销项目');
+ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5uUAAAAASUVORK5CYII=';
+ check((await edit('a',{action:'reimburse',category:'其他',amountCents:50,purpose:'凭证测试',voucher:{name:'发票.png',data:png}})).status===200,'报销可选凭证上传');
+ const voucher=(await get()).book.reimbursements.at(-1).voucherId;
+ check((await fetch(base+'/api/cashflow/vouchers/'+voucher,{headers:{Cookie:cookies.a}})).status===200,'本人可下载报销凭证');
+ check((await fetch(base+'/api/cashflow/vouchers/'+voucher,{headers:{Cookie:cookies.b}})).status===404,'他人不能通过凭证URL读取附件');
+ const oldBook=(await get()).book;
+ const legacy=await req('finance','/api/finance',{action:'record_receipt',projectId:p.id,version:oldBook.version,planId:plan.id,date:day,amountCents:1000,reference:'LEGACY-ENTRY'});
+ check(legacy.status===200,'原合同收款入口复用统一核销');
+ check((await settle([{...split[0],amountCents:1000}],1000,'LEGACY-ENTRY','in')).status===409,'新旧入口不能重复核销同一流水');
+ const companyBefore=(await company()).version,staleBody={...wage,month:'2027-08',dueDate:'2027-09-05',version:companyBefore,requestId:randomUUID()};
+ const concurrent=await Promise.all([post('finance',staleBody),post('finance',{...staleBody,month:'2027-09',requestId:randomUUID()})]);
+ check(concurrent.filter(r=>r.status===200).length===1,'并发公司预算写入仅一个成功，避免覆盖');
+
+ let contractBook=(await get()).book;
+ const submitted=await req('a','/api/finance',{action:'submit_contract',projectId:p.id,version:contractBook.version,contractNo:'CASH-CONTRACT',contractAmountCents:50000,paymentTerms:'沿用已有回款节点'});
+ check(submitted.status===200,'先有项目回款计划仍可提交合同');
+ const reviewed=await req('finance','/api/finance',{action:'review_contract',projectId:p.id,version:submitted.data.book.version,decision:'approved',plans:[{id:plan.id,label:plan.label,amountCents:50000,dueDate:day}],note:'沿用原计划'});
+ check(reviewed.status===200&&reviewed.data.book.receipts.length===2,'合同审核沿用计划ID且不丢既有实际收款');
+ check((await edit('finance',{action:'customer_plan',label:'重复增加',amountCents:100,dueDate:day})).status===400,'已审核合同不允许重复增加超额收款计划');
+ check((await req('finance','/api/finance',{action:'add_supplier',projectId:p.id,version:(await get()).book.version,supplier:'绕过',amountCents:100,dueDate:day,terms:'无订单'})).status===400,'旧采购接口不能绕过订单批次关联');
  console.log(JSON.stringify({passed:count,database}));
 }finally{server.kill('SIGTERM');db.close();}

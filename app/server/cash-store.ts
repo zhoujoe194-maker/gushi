@@ -10,12 +10,13 @@ export class CashStore {
  projects=new Map<string,{before:Project;after:Project}>();
  company?:{before:CompanyBook;after:CompanyBook};
  extra:D1PreparedStatement[]=[];
+ grants=new Set<string>();
  constructor(public ctx:Context,public requestId:string,public hash:string){}
  async project(id:string,allowGrant=false){
   let item=this.projects.get(id);if(!item){const row=await this.ctx.db.prepare('SELECT * FROM projects WHERE user_id=? AND id=?').bind(this.ctx.workspaceId,id).first<ProjectRow>();if(!row)throw new HttpError(404,'项目不存在');const p=projectDTO(row);item={before:structuredClone(p),after:p};this.projects.set(id,item);}
   if(!canReadProject(item.after,this.ctx.member)){
    const grant=allowGrant&&await this.ctx.db.prepare('SELECT member_id FROM finance_project_grants WHERE workspace_id=? AND project_id=? AND member_id=?').bind(this.ctx.workspaceId,id,this.ctx.member.id).first();
-   if(!grant)throw new HttpError(404,'项目不存在或未获授权');
+   if(!grant)throw new HttpError(404,'项目不存在或未获授权');this.grants.add(id);
   }return item.after;
  }
  async book(id:string){let b=this.books.get(id);if(!b){const row=await this.ctx.db.prepare('SELECT * FROM finance_books WHERE workspace_id=? AND project_id=?').bind(this.ctx.workspaceId,id).first<{data:string;version:number;updated_at:string}>();const data=row?{...JSON.parse(row.data),projectId:id,version:row.version,updatedAt:row.updated_at}:emptyBook(id);b={before:structuredClone(data),after:data};this.books.set(id,b);}return b.after;}
@@ -24,6 +25,7 @@ export class CashStore {
  add(sql:string,values:(string|number|null)[]){this.extra.push(this.ctx.db.prepare(sql+' AND '+this.gate).bind(...values,this.ctx.workspaceId,this.requestId));}
  async save(action:string){
   const ctx=this.ctx, now=new Date().toISOString();let conditions="EXISTS(SELECT 1 FROM members WHERE id=? AND version=? AND status='active')",args:(string|number)[]=[ctx.member.id,ctx.member.version];
+  for(const id of this.grants){conditions+=' AND EXISTS(SELECT 1 FROM finance_project_grants WHERE workspace_id=? AND project_id=? AND member_id=?)';args.push(ctx.workspaceId,id,ctx.member.id);}
   for(const [id,b] of this.books){conditions+=' AND COALESCE((SELECT version FROM finance_books WHERE workspace_id=? AND project_id=?),0)=?';args.push(ctx.workspaceId,id,b.before.version);}
   for(const [id,p] of this.projects){conditions+=' AND EXISTS(SELECT 1 FROM projects WHERE user_id=? AND id=? AND version=?)';args.push(ctx.workspaceId,id,p.before.version);}
   if(this.company){conditions+=' AND COALESCE((SELECT version FROM finance_company WHERE workspace_id=?),0)=?';args.push(ctx.workspaceId,this.company.before.version);}

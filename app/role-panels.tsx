@@ -587,7 +587,7 @@ export function ProjectFinance({
     }
     if (m === "review") {
       setDecision("approved");
-      setPlans([
+      setPlans(book.plans.length ? book.plans.map(p=>({...p})) : [
         {
           id: crypto.randomUUID(),
           label: "合同货款",
@@ -1010,7 +1010,7 @@ export function ProjectFinance({
                   <>
                     <p className="helper-text">
                       合同 ¥ {money(book.contractAmountCents)}
-                      ；收款计划合计必须与合同金额一致。
+                      ；收款计划合计必须与合同金额一致。已有项目收款计划会沿用原编号，避免重复。
                     </p>
                     {plans.map((p, i) => (
                       <div className="plan-editor" key={p.id}>
@@ -1138,9 +1138,10 @@ export function ProjectFinance({
                   />
                 </label>
                 <label className="field">
-                  收款凭据 / 流水参考
+                  唯一银行流水号（必填）
                   <input
-                    maxLength={200}
+                    required
+                    maxLength={150}
                     value={reference}
                     onChange={(e) => setReference(e.target.value)}
                   />

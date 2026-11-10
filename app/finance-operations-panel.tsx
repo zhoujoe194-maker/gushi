@@ -115,6 +115,7 @@ export function FinanceOperationsPanel({
   book,
   busy,
   onAction,
+  onPurchase,
 }: {
   member: Member;
   members: Member[];
@@ -122,6 +123,7 @@ export function FinanceOperationsPanel({
   book: FinanceBook;
   busy: boolean;
   onAction: FinanceAction;
+  onPurchase?:()=>void;
 }) {
   const [mode, setMode] = useState(""),
     [form, setForm] = useState<Record<string, string>>({}),
@@ -262,7 +264,7 @@ export function FinanceOperationsPanel({
               </p>
             </div>
             {finance && (
-              <button className="button" onClick={() => open("add_supplier")}>
+              <button className="button" onClick={() => onPurchase ? onPurchase() : open("add_supplier")}>
                 新增厂家应付
               </button>
             )}

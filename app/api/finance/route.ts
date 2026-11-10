@@ -83,6 +83,7 @@ export async function POST(req: Request) {
       if (!canFinance(ctx.member))
         throw new HttpError(403, "此操作仅财务或系统管理员可以执行");
     };
+    if(action==='add_supplier') throw new HttpError(400,'请在项目收支中登记采购订单、交付批次和付款计划；旧计划仍可查看和核销');
     if (financeOperations.includes(action)) {
       financeOnly();
       try {

@@ -1,4 +1,5 @@
 "use client";
+import {CashDashboard,MyReimbursements} from './cash-dashboard';
 import {CompanyExpenses} from './company-expenses';
 import {ProjectCash} from './cash-panels';
 import { ProjectOutcomes, ProjectResults, PauseReviewReminder } from './outcome-panels';
@@ -105,6 +106,8 @@ const ALL_NAV = [
   { id: "pipeline", label: "阶段看板", icon: Columns3 },
   { id: "meetings", label: "周会与任务", icon: CalendarDays },
   { id: "finance", label: "合同与票款", icon: Wallet },
+  { id: "cashflow", label: "现金流与资金风险", icon: Wallet },
+  { id: "reimbursements", label: "项目报销", icon: Wallet },
   { id: "company-expenses", label: "工资和固定费用", icon: Wallet },
   { id: "members", label: "人员管理", icon: Users },
   { id: "sales", label: "销售考核", icon: ClipboardCheck },
@@ -332,7 +335,8 @@ export default function Workspace({
     return ["overview", "projects", "tasks", "filings", "guide", "products"];
   })();
   allowed.push("messages");
-  if(canViewFinance(viewMember)) allowed.push("company-expenses");
+  if(canViewFinance(viewMember)) allowed.push("company-expenses", "cashflow");
+  allowed.push("reimbursements");
   if (isManager(viewMember) || viewMember.role === "sales")
     allowed.push("sales", "results");
   const NAV = ALL_NAV.filter((n) => allowed.includes(n.id)).map((n) =>
@@ -1773,7 +1777,10 @@ export default function Workspace({
               )}
               {tab === "overview" && isManager(viewMember) && !demo && <PauseReviewReminder request={workspaceFetch} projects={projects} open={()=>navigate("results")} />}
               {tab === "results" && <ProjectResults member={viewMember} request={workspaceFetch} projects={projects} demo={demo} onOpen={p=>{setDetail(p.id);setDetailTab("状态与原因");}} />}
-              {tab === "overview" && (
+              {tab === "overview" && canViewFinance(viewMember) && <CashDashboard member={viewMember} request={workspaceFetch} demo={demo} compact={viewMember.role!=="finance"} onOpen={id=>{setDetail(id);setDetailTab("项目收支");}}/>}
+              {tab === "cashflow" && canViewFinance(viewMember) && <CashDashboard member={viewMember} request={workspaceFetch} demo={demo} onOpen={id=>{setDetail(id);setDetailTab("项目收支");}}/>}
+              {tab === "reimbursements" && <MyReimbursements member={viewMember} request={workspaceFetch} demo={demo}/>}
+              {tab === "overview" && viewMember.role!=="finance" && (
                 <RoleDashboard
                   member={viewMember}
                   projects={scopeProjects}
@@ -2463,7 +2470,7 @@ export default function Workspace({
                 (detailTab === "阶段推进" ? "workflow-detail-content" : "")
               }
             >
-              {detailTab === "项目收支" && <ProjectCash projectId={selected.id} member={viewMember} request={workspaceFetch} demo={demo} />}
+              {detailTab === "项目收支" && <ProjectCash projectId={selected.id} member={viewMember} request={workspaceFetch} demo={demo} onChanged={()=>void loadLive(true)} />}
               {detailTab === "状态与原因" && <ProjectOutcomes project={selected} member={viewMember} request={workspaceFetch} demo={demo} onChanged={(p,e)=>{setProjects(ps=>ps.map(x=>x.id===p.id?p:x));setEvents(es=>[e,...es]);setNotice("状态与原因已保存");}} />}
               {detailTab === "阶段推进" && (
                 <StageWorkspace
@@ -2510,6 +2517,7 @@ export default function Workspace({
                     onAction={financeAction}
                   />
                   <FinanceOperationsPanel
+                    onPurchase={()=>setDetailTab("项目收支")}
                     member={viewMember}
                     members={members}
                     project={selected}

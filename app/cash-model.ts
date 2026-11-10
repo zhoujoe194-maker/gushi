@@ -37,7 +37,7 @@ export function projectLines(b:FinanceBook,p:Project):CashLine[]{
  const line=(id:string,label:string,category:string,direction:'in'|'out',amountCents:number,dueDate:string,payments:CashPayment[],certainty:Certainty,status:string,source:string):CashLine=>({id,projectId:p.id,projectName:p.name,label,category,direction,amountCents,paidCents:paid(payments),remainingCents:Math.max(0,amountCents-paid(payments)),dueDate,payments,certainty,status,source});
  return [
  ...b.plans.map((r:PaymentPlan)=>line(r.id,r.label,'客户回款','in',r.amountCents,r.dueDate,b.receipts.filter(v=>v.planId===r.id),r.certainty||'expected',r.cashStatus||(b.reviewStatus==='已审核'?'confirmed':'draft'),'finance_books.plans')),
- ...(b.suppliers||[]).filter(r=>!r.voidAt).map(r=>({...line(r.id,r.supplier+' · '+(r.batchName||r.terms),'采购付款','out',r.amountCents,r.dueDate,r.payments,r.certainty||'confirmed','confirmed','finance_books.suppliers'),dateWarning:suggestedDue(r,p)!==r.dueDate?(suggestedDue(r,p)||'货期不完整，待财务复核'):undefined})),
+ ...(b.suppliers||[]).filter(r=>!r.voidAt).map(r=>({...line(r.id,r.supplier+' · '+(r.batchName||r.terms),'采购付款','out',r.amountCents,r.dueDate,r.payments,r.certainty||'confirmed','confirmed','finance_books.suppliers'),dateWarning:!r.cashTerms?'旧计划未关联采购订单，请补充订单与批次':suggestedDue(r,p)!==r.dueDate?(suggestedDue(r,p)||'货期不完整，待财务复核'):undefined})),
  ...(b.reimbursements||[]).map(r=>line(r.id,r.category+' · '+r.purpose,'报销','out',r.amountCents,r.dueDate,r.payments,'confirmed',r.status==='待处理'?'draft':r.status==='已驳回'?'cancelled':r.status==='已支付'?'settled':'confirmed','finance_books.reimbursements')),
  ];
 }

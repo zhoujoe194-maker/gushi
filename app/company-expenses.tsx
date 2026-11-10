@@ -1,0 +1,28 @@
+'use client';
+import {useEffect,useState,type FormEvent} from 'react';
+import {Field,cashJson,CashLines,type CashRequest} from './cash-panels';
+import {EXPENSE_CATEGORIES,companyLines,nextMonth,type CompanyBook,type CompanyPlan} from './cash-model';
+import {canFinance,type Member} from './team';
+import {today} from './model';
+import {toCents,money} from './finance-model';
+export function CompanyExpenses({member,request,demo=false}:{member:Member;request:CashRequest;demo?:boolean}){
+ const [book,setBook]=useState<CompanyBook|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[revision,refresh]=useState(0),[editId,setEditId]=useState('');
+ useEffect(()=>{let active=true;if(!demo)cashJson<{company:CompanyBook}>(request,'/api/cashflow').then(v=>{if(active)setBook(v.company);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[request,revision,demo]);
+ const edit=book?.plans.find(p=>p.id===editId),finance=canFinance(member);
+ async function send(body:Record<string,unknown>){setBusy(true);setError('');setNotice('');try{await cashJson(request,'/api/cashflow',{...body,version:book!.version,requestId:crypto.randomUUID()});refresh(n=>n+1);setNotice('已保存，公司费用已同步');return true;}catch(e){setError(e instanceof Error?e.message:'保存失败');return false;}finally{setBusy(false);}}
+ async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();const v=Object.fromEntries(new FormData(e.currentTarget));if(await send({...v,action:'company_plan',...(editId?{id:editId}:{}),amountCents:toCents(String(v.amountCents)),includesBenefits:v.includesBenefits==='on',repeatCount:Number(v.repeatCount||1)}))setEditId('');}
+ return <section className="panel cash-panel"><h2>工资和固定费用</h2><p>只记录公司总额。预算与实付分开；草稿不进入预测，银行核销后只预测未付余额。</p>{demo&&<p>请用试用财务账号维护公司费用。</p>}{error&&<p className="error-box" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}{book&&<>
+ <CashLines lines={companyLines(book)}/>
+ {finance&&<><label className="field">维护费用<select value={editId} onChange={e=>setEditId(e.target.value)}><option value="">新增费用计划</option>{book.plans.map(p=><option key={p.id} value={p.id}>{p.month} · {p.label} · ¥{money(p.amountCents)}</option>)}</select></label>
+ <form className="cash-form finance-block" key={editId+revision} onSubmit={save}>
+ <label className="field">支出 / 收入分类<select name="category" defaultValue={edit?.category||'工资'}>{EXPENSE_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></label>
+ <Field name="month" label="费用所属月份" type="month" required value={edit?.month||today().slice(0,7)}/><Field name="label" label="费用名称" required value={edit?.label}/><Field name="amountCents" label="预算金额（元）" type="number" required value={edit?String(edit.amountCents/100):''}/><Field name="dueDate" label="预计实际收付款日期" type="date" required value={edit?.dueDate}/>
+ <label className="field">状态<select name="status" defaultValue={edit?.status==='settled'?'confirmed':edit?.status||'draft'}><option value="draft">草稿（不计入预测）</option><option value="confirmed">财务已确认计划</option><option value="cancelled">取消未支付计划</option></select></label>
+ <label className="field">确定性<select name="certainty" defaultValue={edit?.certainty||'confirmed'}><option value="confirmed">已确认待发生</option><option value="expected">预计</option><option value="uncertain">不确定</option></select></label>
+ <label><input name="includesBenefits" type="checkbox" defaultChecked={edit?.includesBenefits}/> 工资预算已包含社保和公积金（不再另计）</label>
+ {!edit&&<Field name="repeatCount" label="按月生成次数（1–24，一次性填 1）" type="number" required value="1"/>}<Field name="note" label="备注" value={edit?.note}/><button className="button primary" disabled={busy}>{busy?'正在保存…':'保存费用计划'}</button></form>
+ <details className="finance-block"><summary>参考上月生成下月工资草稿</summary><form className="cash-form" onSubmit={async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.currentTarget));await send({...v,action:'company_copy'});}}><label className="field">参考工资计划<select name="id" required>{book.plans.filter(p=>p.category==='工资'&&p.status!=='cancelled').map(p=><option key={p.id} value={p.id}>{p.month} → {nextMonth(p.month)}</option>)}</select></label><Field name="dueDate" label="下期预计发薪日期" type="date" required/><p>生成后为草稿，需要财务再次确认。</p><button className="button" disabled={busy}>生成工资草稿</button></form></details>
+ <details className="finance-block"><summary>确认实际发薪 / 公司费用收付</summary><form className="cash-form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,v=Object.fromEntries(new FormData(form)),p=book.plans.find(p=>p.id===v.id)!;if(await send({action:'settle',reference:v.reference,date:v.date,note:v.note,direction:p.direction,amountCents:toCents(String(v.amountCents)),close:v.close==='on',allocations:[{projectId:'',kind:'company',targetId:p.id,amountCents:toCents(String(v.amountCents))}]}))form.reset();}}><label className="field">已确认费用<select name="id" required>{book.plans.filter(p=>p.status==='confirmed').map(p=><option key={p.id} value={p.id}>{p.month} · {p.label}</option>)}</select></label><Field name="amountCents" label="实际金额（元）" type="number" required/><Field name="date" label="实际银行日期" type="date" required value={today()}/><Field name="reference" label="唯一银行流水号" required/><Field name="note" label="实际与预算差异说明"/><label><input name="close" type="checkbox"/> 本计划已经结清（实际可与预算不同，剩余预算不再预测）</label><button className="button primary" disabled={busy}>确认实际收付款</button></form></details></>}
+ <details><summary>预算修改历史</summary>{book.plans.map(p=><article key={p.id}><strong>{p.month} · {p.label}</strong>{p.history.map((h,i)=><p key={i}>{h.at} · {h.note}{h.before?` · 修改前：${JSON.stringify(h.before)}`:''}</p>)}</article>)}</details>
+ </>}</section>;
+}

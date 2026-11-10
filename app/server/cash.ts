@@ -79,7 +79,7 @@ async function bankMutation(s:CashStore,raw:Record<string,unknown>,action:string
   }
   if(transaction.voidAt){const payment=payments.find(p=>p.bankId===transaction.id&&!p.voidAt);if(!payment)throw new HttpError(409,'核销记录已改变，不能部分冲销');payment.voidAt=transaction.voidAt;payment.voidReason=transaction.voidReason;if(reimbursement)reimbursement.status='已确认待支付';if(companyPlan)companyPlan.status='confirmed';}
   else{
-   if(a.amountCents>amountCents-paid(payments))throw new HttpError(400,'本次金额超过剩余未收付款');
+   if(a.amountCents>amountCents-paid(payments)&&!(companyPlan&&raw.close===true))throw new HttpError(400,'本次金额超过剩余未收付款');
    const payment:CashPayment={id:crypto.randomUUID(),bankId:transaction.id,date:transaction.date,amountCents:a.amountCents,reference:transaction.reference,recordedBy:ctx.member.id};
    if(a.kind==='customer'){const b=await s.book(a.projectId);b.receipts.push({...payment,planId:a.targetId,note:transaction.note});}else payments.push(payment);
    if(reimbursement&&paid(payments)===amountCents)reimbursement.status='已支付';if(companyPlan&&(raw.close===true||paid(payments)===amountCents))companyPlan.status='settled';

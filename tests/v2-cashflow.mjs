@@ -81,5 +81,32 @@ try{
  check((await settle([{...split[0],amountCents:100}],100,'FAIL','in')).status===503,'模拟银行记录写入失败');
  db.exec('DROP TRIGGER cash_rollback');check((await get()).book.version===before,'失败回滚项目核销记录');
  check(db.prepare('SELECT count(*) n FROM finance_mutations').get().n>10,'保留财务变更审计');
+
+ const company=async()=>(await req('finance','/api/cashflow')).data.company;
+ const cp=async(body,actor='finance')=>post(actor,{version:(await company()).version,...body});
+ const wage={action:'company_plan',category:'工资',month:'2026-10',label:'十月工资',amountCents:100000,dueDate:'2026-11-05',includesBenefits:true,status:'confirmed'};
+ check((await cp(wage,'manager')).status===403,'管理默认不能改工资预算');
+ check((await cp(wage,'a')).status===403,'销售不能写公司工资');
+ check((await cp(wage)).status===200,'财务登记跨月工资');
+ let cb=await company(),wp=cb.plans[0];check(wp.month==='2026-10'&&wp.dueDate==='2026-11-05','工资所属月与实际预计发薪日分开');
+ check((await cp(wage)).status===400,'同月工资不能重复生成');
+ check((await cp({...wage,category:'社保',label:'社保',includesBenefits:false})).status===400,'工资已含社保公积金不允许重复确认');
+ check((await cp({action:'company_copy',id:wp.id,dueDate:'2026-12-05'})).status===200,'参考上月生成下月工资');
+ cb=await company();check(cb.plans.find(p=>p.month==='2026-11').status==='draft','复制工资必须待财务确认');
+ check((await cp({action:'company_copy',id:wp.id,dueDate:'2026-12-05'})).status===400,'重复复制不新增第二份工资预算');
+ const wagePay={action:'settle',direction:'out',reference:'WAGE-OCT',date:day,amountCents:95000,close:true,allocations:[{projectId:'',kind:'company',targetId:wp.id,amountCents:95000}]};
+ check((await post('finance',wagePay)).status===200,'实际工资少于预算可结清');
+ cb=await company();check(cb.plans[0].amountCents===100000&&cb.plans[0].payments[0].amountCents===95000&&cb.plans[0].status==='settled','原预算和实发金额独立保留');
+ check((await req('finance','/api/cashflow')).data.lines.find(l=>l.id===wp.id).remainingCents===0,'工资结清后剩余预算不继续算待付');
+ const next=cb.plans.find(p=>p.month==='2026-11');check((await cp({...wage,id:next.id,month:'2026-11',label:'十一月工资',dueDate:'2026-12-05',amountCents:110000})).status===200,'财务确认并调整复制工资预算');
+ check((await post('finance',{...wagePay,reference:'WAGE-NOV',amountCents:112000,allocations:[{projectId:'',kind:'company',targetId:next.id,amountCents:112000}]})).status===200,'实发高于预算仍可核实结清且保留预算');
+ check((await cp({action:'company_plan',category:'租金',month:'2026-11',label:'办公室',amountCents:80000,dueDate:'2026-11-30',status:'confirmed',repeatCount:4})).status===200,'有限次数生成周期费用');
+ cb=await company();const rent=cb.plans.filter(p=>p.category==='租金');check(rent.length===4&&rent[3].dueDate==='2027-02-28','周期费用明确日期并正确处理二月月底');
+ check((await cp({action:'company_plan',category:'租金',month:'2026-11',label:'办公室',amountCents:80000,dueDate:'2026-11-30',status:'confirmed',repeatCount:4})).status===400,'重复生成相同周期被拒绝');
+ check((await cp({action:'company_plan',category:'租金',month:'2026-11',label:'无限期',amountCents:80000,dueDate:'2026-11-30',status:'confirmed',repeatCount:10000})).status===400,'周期次数上限24，不无限展开');
+ check((await cp({action:'company_opening',amountCents:500000,date:day,note:'模拟银行零时余额'})).status===200,'财务设置真实或模拟期初现金');
+ check((await req('a','/api/cashflow')).status===403,'工资计划与期初现金不泄露给销售');
+ check((await req('manager','/api/cashflow')).data.company.plans.length>0,'管理可只读公司费用总额');
+ check((await company()).plans[0].history.length>0,'预算修改历史保留');
  console.log(JSON.stringify({passed:count,database}));
 }finally{server.kill('SIGTERM');db.close();}

@@ -1,4 +1,5 @@
 "use client";
+import {CompanyExpenses} from './company-expenses';
 import {ProjectCash} from './cash-panels';
 import { ProjectOutcomes, ProjectResults, PauseReviewReminder } from './outcome-panels';
 import { statusOf, BUSINESS_STATUSES } from './outcome-model';
@@ -104,6 +105,7 @@ const ALL_NAV = [
   { id: "pipeline", label: "阶段看板", icon: Columns3 },
   { id: "meetings", label: "周会与任务", icon: CalendarDays },
   { id: "finance", label: "合同与票款", icon: Wallet },
+  { id: "company-expenses", label: "工资和固定费用", icon: Wallet },
   { id: "members", label: "人员管理", icon: Users },
   { id: "sales", label: "销售考核", icon: ClipboardCheck },
   { id: "results", label: "我的项目结果", icon: History },
@@ -330,6 +332,7 @@ export default function Workspace({
     return ["overview", "projects", "tasks", "filings", "guide", "products"];
   })();
   allowed.push("messages");
+  if(canViewFinance(viewMember)) allowed.push("company-expenses");
   if (isManager(viewMember) || viewMember.role === "sales")
     allowed.push("sales", "results");
   const NAV = ALL_NAV.filter((n) => allowed.includes(n.id)).map((n) =>
@@ -1829,6 +1832,7 @@ export default function Workspace({
                   groupRequest={groupRequest}
                 />
               </div>
+              {tab === "company-expenses" && canViewFinance(viewMember) && <CompanyExpenses member={viewMember} request={workspaceFetch} demo={demo}/>}
               {tab === "finance" && (canViewFinance(viewMember) || viewMember.role === "sales") && (
                 <FinanceCenter
                   member={viewMember}

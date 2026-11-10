@@ -254,30 +254,71 @@ try {
   });
   check(
     completed.status === 200 && completed.body.redirectTo === '/workspaces',
-    '初始管理员完成实名改密后可选五台',
+    '初始管理员完成实名改密后可选三个工作台',
   );
   const live = await api(completed.cookie, '/api/workspace');
   check(
     live.status === 200 && live.headers.get('cache-control') === 'no-store',
     '真实生产服务读取运行时数据库且业务响应禁止缓存',
   );
-  check(live.body.member.assignedDesks.length === 5, '首位管理员获得五台权限');
-  for (const [desk, label] of [
-    ['sales', '销售台'],
-    ['management', '管理台'],
-    ['finance', '财务台'],
-    ['operations', '运营台'],
-    ['aftersales', '售后台'],
+  check(
+    live.body.member.assignedDesks.length === 5 &&
+      ['sales', 'management', 'finance', 'operations', 'aftersales'].every(
+        (desk) => live.body.member.assignedDesks.includes(desk),
+      ),
+    '首位管理员获得五个岗位粒度授权（对应三个工作台）',
+  );
+  for (const [portal, label] of [
+    ['sales', '销售工作台'],
+    ['management', '管理工作台'],
+    ['finance', '财务工作台'],
   ]) {
-    const page = await fetch(base + '/work/' + desk, {
+    const page = await fetch(base + '/work/' + portal, {
       headers: { Cookie: completed.cookie },
       redirect: 'manual',
     });
     check(
       page.status === 200 && (await page.text()).includes(label),
-      `独立部署包含并可访问 ${desk} 工作台路由`,
+      `独立部署包含并可访问 ${portal} 工作台路由`,
     );
   }
+  for (const [legacy, target] of [
+    ['operations', 'management'],
+    ['aftersales', 'management'],
+  ]) {
+    const page = await fetch(base + '/work/' + legacy, {
+      headers: { Cookie: completed.cookie },
+      redirect: 'manual',
+    });
+    const location = page.headers.get('location') || '';
+    check(
+      [301, 302, 303, 307, 308].includes(page.status) &&
+        new URL(location, base).pathname === '/work/' + target,
+      `旧 ${legacy} 工作台路由重定向到 ${target} 工作台`,
+    );
+  }
+  check(
+    (
+      await fetch(base + '/work/not-a-workbench', {
+        headers: { Cookie: completed.cookie },
+        redirect: 'manual',
+      })
+    ).status === 404,
+    '未知工作台路由返回 404',
+  );
+  const workspacesPage = await fetch(base + '/workspaces', {
+    headers: { Cookie: completed.cookie },
+    redirect: 'manual',
+  });
+  const workspacesHtml = await workspacesPage.text();
+  check(
+    workspacesPage.status === 200 &&
+      ['/work/sales', '/work/management', '/work/finance'].every((href) =>
+        workspacesHtml.includes('href="' + href + '"'),
+      ) &&
+      !workspacesHtml.includes('/work/operations'),
+    '/workspaces 只展示三个工作台入口',
+  );
   const project = {
     name: '备份恢复验收项目',
     location: '',

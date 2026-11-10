@@ -55,12 +55,16 @@ const when = (s: string) =>
 async function api<T = Record<string, unknown>>(
   path: string,
   data?: unknown,
-  desk?: string,
+  portal?: string,
+  scope?: string,
 ): Promise<T> {
   const r = await fetch('/api/messages' + path, {
     cache: 'no-store',
     headers: {
-      ...(desk ? { 'X-Workspace-Desk': desk } : {}),
+      // D1: the active workbench plus its effective granular scope decide the
+      // permission context on the server; the legacy desk header is gone.
+      ...(portal ? { 'X-Workspace-Portal': portal } : {}),
+      ...(scope ? { 'X-Workspace-Scope': scope } : {}),
       ...(data ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(data ? { method: 'POST', body: JSON.stringify(data) } : {}),
@@ -94,8 +98,8 @@ export default function MessageCenter({
 }) {
   const request = useCallback(
     <T = Record<string, unknown>,>(path: string, data?: unknown) =>
-      api<T>(path, data, deskOf(member.role)),
-    [member.role],
+      api<T>(path, data, member.portal, member.scope),
+    [member.portal, member.scope],
   );
   const [inbox, setInbox] = useState<MessageInbox>({
       threads: [],
@@ -497,11 +501,11 @@ export default function MessageCenter({
                       {t.group
                         ? t.group.members.length + ' 位成员'
                         : t.a.kind === 'desk' && t.b.kind === 'desk'
-                          ? '本台共享'
+                          ? '岗位共享'
                           : mine.includes(personKey(member.id)) &&
                               [t.a.key, t.b.key].includes(personKey(member.id))
                             ? '本人参与'
-                            : '本台共享'}
+                            : '岗位共享'}
                     </small>
                     <p>
                       {t.lastMessage.actorName}：{t.lastMessage.body}
@@ -534,7 +538,7 @@ export default function MessageCenter({
           <div className="conversation-identity">
             <span className="status-dot" />
             {member.name}
-            <small>{roleInfo(member.role).name}台</small>
+            <small>{roleInfo(member.role).name}岗</small>
           </div>
         </aside>
         <div className="conversation-main">
@@ -970,7 +974,7 @@ function StartConversation({
             >
               <option value={personKey(member.id)}>本人 · {member.name}</option>
               <option value={deskKey(deskOf(member.role))}>
-                代表{roleInfo(member.role).name}台
+                代表{roleInfo(member.role).name}岗
               </option>
             </select>
           </label>

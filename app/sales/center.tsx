@@ -10,7 +10,7 @@ import {
   RefreshCw,
   ArrowRight,
 } from 'lucide-react';
-import { isManager, deskOf, type Member } from '../team';
+import { isManager, type Member } from '../team';
 import type { Project } from '../model';
 import { FinanceModal } from '../role-panels';
 import {
@@ -140,6 +140,12 @@ function download(inbox: SalesInbox) {
   a.click();
   URL.revokeObjectURL(url);
 }
+// D1: sales performance reads the active workbench (portal) plus the effective
+// granular scope instead of the retired five-desk header.
+const workspaceHeaders = (member: Member) => ({
+  'X-Workspace-Portal': member.portal || 'management',
+  ...(member.scope ? { 'X-Workspace-Scope': member.scope } : {}),
+});
 export default function SalesCenter({
   member,
   projects,
@@ -180,7 +186,7 @@ export default function SalesCenter({
         new URLSearchParams({ month, ...(person ? { memberId: person } : {}) }),
       {
         cache: 'no-store',
-        headers: { 'X-Workspace-Desk': deskOf(member.role) },
+        headers: workspaceHeaders(member),
         signal: controller.signal,
       },
     )
@@ -198,7 +204,7 @@ export default function SalesCenter({
           });
       });
     return () => controller.abort();
-  }, [demo, key, month, person, member.role]);
+  }, [demo, key, month, person, member.portal, member.scope]);
   const inbox = demo
     ? demoSalesInbox(member, month, person, demoRecords)
     : loaded?.key === key
@@ -237,7 +243,7 @@ export default function SalesCenter({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Workspace-Desk': deskOf(member.role),
+          ...workspaceHeaders(member),
         },
         body: JSON.stringify(body),
       });
@@ -570,7 +576,7 @@ export default function SalesCenter({
                     <p>
                       {self
                         ? '点击上方按钮开始填写，提交后由管理审核。'
-                        : '成员在销售台提交后，会在这里显示待审核的内容。'}
+                        : '成员在销售工作台提交后，会在这里显示待审核的内容。'}
                     </p>
                   </div>
                 )}

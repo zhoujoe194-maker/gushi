@@ -173,12 +173,15 @@ await denied(
   400,
   '不存在的日历日期被拒绝',
 );
-await denied(
-  'sales',
-  '/api/workspace',
-  { action: 'create', data: { ...blank, nextAction: '' } },
-  400,
-  '进行中项目必须安排下一步',
+const draftProject = (
+  await ok('sales', '/api/workspace', {
+    action: 'create',
+    data: { ...blank, name: '待安排下一步项目', nextAction: '', nextDate: '' },
+  })
+).project;
+check(
+  draftProject.nextAction === '' && draftProject.nextDate === '',
+  'V2 轻量创建允许尚未安排下一步',
 );
 await denied(
   'ops',
@@ -210,10 +213,12 @@ async function save(user, action, data, note = '验收记录', desk) {
   ).project;
 }
 check(
-  !(await projectFor('sales2')) &&
-    !(await projectFor('branch')) &&
-    !(await projectFor('outside')),
-  '非主跟、其他分部及其他公司项目隔离',
+  !(await projectFor('sales2')) && !(await projectFor('outside')),
+  '非主跟及其他公司项目隔离',
+);
+check(
+  (await projectFor('branch'))?.id === projectId,
+  'V2 公司范围：管理岗位统一查看公司项目',
 );
 await denied(
   'outside',
@@ -239,19 +244,25 @@ await denied(
   409,
   '项目旧版本不能覆盖新编辑',
 );
-project = await save(
-  'sales',
-  'followup',
-  { ...project, nextAction: '提交付款资料', nextDate: '2026-12-02' },
-  '已与客户确认需求',
-);
+// Quick follow-ups are append-only: action=followup with content + requestId.
+const followupDate = '2026-12-02';
+await ok('sales', '/api/workspace', {
+  action: 'followup',
+  id: project.id,
+  version: project.version,
+  content: '已与客户确认需求',
+  nextDate: followupDate,
+  requestId: randomUUID(),
+});
+project = await projectFor('sales');
 check(
   (await ok('sales', '/api/workspace')).events.some(
     (e) =>
       e.projectId === project.id &&
       e.kind === '跟进记录' &&
       e.note === '已与客户确认需求',
-  ),
+  ) &&
+    project.nextDate === followupDate,
   '跟进记录和下一步计划可追溯',
 );
 project.workflow.assignmentMembers = {
@@ -261,9 +272,8 @@ project.workflow.assignmentMembers = {
 };
 project = await save('manager', 'workflow', project);
 check(
-  (await projectFor('ops'))?.id === projectId &&
-    (await projectFor('after'))?.id === projectId,
-  '分配后运营和售后可访问项目',
+  !(await projectFor('ops')) && !(await projectFor('after')),
+  '部门对接人分配不向运营/售后开放项目主档（V2 边界）',
 );
 const wrong = structuredClone(project);
 wrong.workflow.assignmentMembers.operations = users.sales.id;
@@ -280,7 +290,36 @@ await denied(
   400,
   '部门对接人岗位必须匹配',
 );
-let op = await projectFor('ops');
+// Ops/aftersales cannot read the project record, so every project-scoped write
+// is rejected at the record boundary. Positive filing/stage flows move to the
+// project owner (sales) / management.
+await denied(
+  'ops',
+  '/api/workspace',
+  {
+    action: 'workflow',
+    id: project.id,
+    version: project.version,
+    data: project,
+    note: '越权',
+  },
+  404,
+  '运营不能通过项目接口写入（项目主档不可读）',
+);
+await denied(
+  'after',
+  '/api/workspace',
+  {
+    action: 'filing',
+    id: project.id,
+    version: project.version,
+    data: project,
+    note: '越权',
+  },
+  404,
+  '售后不能通过报备接口写入（项目主档不可读）',
+);
+let op = await projectFor('sales');
 op.opportunities[0] = {
   ...op.opportunities[0],
   filing: '已确认',
@@ -288,50 +327,22 @@ op.opportunities[0] = {
   filingContact: '厂家联系人',
   filingReference: 'QA-FILING',
 };
-op = await save('ops', 'filing', op, '厂家确认报备');
-check(op.opportunities[0].filing === '已确认', '运营可更新厂家报备和回执');
-await denied(
-  'ops',
-  '/api/workspace',
-  {
-    action: 'filing',
-    id: op.id,
-    version: op.version,
-    data: { ...op, name: '篡改主档' },
-    note: '尝试',
-  },
-  403,
-  '报备接口不能改项目主档',
-);
-const badProduct = structuredClone(op);
-badProduct.opportunities[0].productId = 'another';
-await denied(
-  'ops',
-  '/api/workspace',
-  {
-    action: 'filing',
-    id: op.id,
-    version: op.version,
-    data: badProduct,
-    note: '尝试',
-  },
-  403,
-  '报备接口不能替换销售产品',
-);
+op = await save('sales', 'filing', op, '厂家确认报备');
+check(op.opportunities[0].filing === '已确认', '销售主跟可更新厂家报备和回执');
 op.workflow.facts['technical-needs'] = '现场已核对';
 op.workflow.milestones.design = '2026-12-01';
-op.workflow.checklist['delivery-supply'] = true;
-op.workflow.facts['check:delivery-supply'] = '已确认厂家排产与收货安排';
-op = await save('ops', 'workflow', op);
+op.workflow.checklist['deal-credit'] = true;
+op.workflow.facts['check:deal-credit'] = '已核实采购主体授权与信用';
+op = await save('sales', 'workflow', op);
 check(
   op.workflow.facts['technical-needs'] === '现场已核对' &&
     op.workflow.milestones.design === '2026-12-01',
-  '运营可维护本岗位阶段信息和时间节点',
+  '主跟可维护本岗位阶段信息和时间节点',
 );
 const forbidden = structuredClone(op);
 forbidden.workflow.facts['payment-record'] = '越权金额';
 await denied(
-  'ops',
+  'sales',
   '/api/workspace',
   {
     action: 'workflow',
@@ -341,7 +352,7 @@ await denied(
     note: '尝试',
   },
   403,
-  '运营不能写财务核对记录',
+  '非财务岗位仍不能写财务核对记录',
 );
 
 // Standalone tasks: sales dispatch, recipients, management review and isolation.
@@ -380,12 +391,16 @@ check(
   (await ok('manager', '/api/tasks')).tasks.some((t) => t.id === standalone.id),
   '管理可督办销售下发的独立任务',
 );
-for (const user of ['sales2', 'finance', 'after', 'branch', 'outside']) {
+for (const user of ['sales2', 'finance', 'after', 'outside']) {
   check(
     !(await ok(user, '/api/tasks')).tasks.some((t) => t.id === standalone.id),
     user + ' 不可读取无关独立任务',
   );
 }
+check(
+  (await ok('branch', '/api/tasks')).tasks.some((t) => t.id === standalone.id),
+  'V2 公司管理可查看全部独立任务',
+);
 await denied(
   'sales2',
   '/api/tasks',
@@ -398,12 +413,15 @@ await denied(
   404,
   '其他销售不能修改下发人的跨台任务',
 );
-await denied(
-  'sales',
-  '/api/tasks',
-  { action: 'create', data: { ...standaloneInput, region: '湖南分部' } },
-  403,
-  '销售不得跨分部派单',
+const crossRegion = (
+  await ok('sales', '/api/tasks', {
+    action: 'create',
+    data: { ...standaloneInput, region: '湖南分部' },
+  })
+).task;
+check(
+  crossRegion.region === '湖南分部' && crossRegion.desk === 'operations',
+  'V2 不再按旧分部字段限制销售派单',
 );
 await denied(
   'sales',
@@ -538,16 +556,31 @@ await denied(
   403,
   '下发人不能抢领其他台的待认领任务',
 );
-poolSales = (
-  await ok('ops2', '/api/tasks', {
+await denied(
+  'ops2',
+  '/api/tasks',
+  {
     action: 'feedback',
     id: poolSales.id,
     version: poolSales.version,
     status: '处理中',
     result: '我来处理',
+  },
+  404,
+  '未指定承办人的任务不能被同台成员直接认领（V2 inTaskScope 边界）',
+);
+poolSales = (
+  await ok('manager', '/api/tasks', {
+    action: 'edit',
+    id: poolSales.id,
+    version: poolSales.version,
+    data: { ...standaloneInput, assigneeId: users.ops2.id },
   })
 ).task;
-check(poolSales.assigneeId === users.ops2.id, '承办台成员可认领销售下发的任务');
+check(
+  poolSales.assigneeId === users.ops2.id,
+  '管理可将待认领任务指派给承办成员',
+);
 await denied(
   'sales',
   '/api/tasks',
@@ -602,7 +635,7 @@ const taskInput = {
   desk: 'operations',
   dueDate: '2026-12-01',
   region: '广州总部',
-  projectId,
+  projectId: '',
   assigneeId: users.ops.id,
 };
 await denied(
@@ -612,12 +645,15 @@ await denied(
   403,
   '运营不能自行下达任务',
 );
-await denied(
-  'branch',
-  '/api/tasks',
-  { action: 'create', data: taskInput },
-  404,
-  '分部管理不能向其他分部项目派单',
+const branchDispatch = (
+  await ok('branch', '/api/tasks', {
+    action: 'create',
+    data: { ...taskInput, title: '跨旧分部派发任务' },
+  })
+).task;
+check(
+  branchDispatch.status === '待处理' && branchDispatch.region === '广州总部',
+  'V2 公司管理可跨旧分部派发任务',
 );
 let task = (
   await ok('manager', '/api/tasks', { action: 'create', data: taskInput })
@@ -636,7 +672,7 @@ await denied(
     status: '处理中',
     result: '抢改',
   },
-  403,
+  404,
   '同台非承办人不能反馈指定任务',
 );
 await denied(
@@ -752,16 +788,28 @@ let pool = (
     data: { ...taskInput, assigneeId: '' },
   })
 ).task;
-pool = (
-  await ok('ops', '/api/tasks', {
+await denied(
+  'ops',
+  '/api/tasks',
+  {
     action: 'feedback',
     id: pool.id,
     version: pool.version,
     status: '处理中',
     result: '',
+  },
+  404,
+  '未指定承办人的任务需先由管理指派（V2 inTaskScope 边界）',
+);
+pool = (
+  await ok('manager', '/api/tasks', {
+    action: 'edit',
+    id: pool.id,
+    version: pool.version,
+    data: { ...taskInput, assigneeId: users.ops.id },
   })
 ).task;
-check(pool.assigneeId === users.ops.id, '未指定任务由首位办理成员认领');
+check(pool.assigneeId === users.ops.id, '管理可把待认领任务指派给承办成员');
 await denied(
   'manager',
   '/api/tasks',
@@ -845,8 +893,8 @@ await finDenied(
   'ops',
   'review_contract',
   { decision: 'approved' },
-  403,
-  '运营不能读取或操作票款台账',
+  404,
+  '运营不能读取项目票款台账（项目主档不可读，V2 边界）',
 );
 await finDenied(
   'manager',
@@ -915,21 +963,21 @@ await finDenied(
 await finDenied(
   'finance',
   'record_receipt',
-  { planId: 'deposit', amountCents: 234568, date: day },
+  { planId: 'deposit', amountCents: 234568, date: day, reference: 'BANK-' + randomUUID() },
   400,
   '实收不能超出节点余额',
 );
 await finDenied(
   'finance',
   'record_receipt',
-  { planId: 'deposit', amountCents: 1.1, date: day },
+  { planId: 'deposit', amountCents: 1.1, date: day, reference: 'BANK-' + randomUUID() },
   400,
   '金额必须为整数分',
 );
 await finDenied(
   'finance',
   'record_receipt',
-  { planId: 'deposit', amountCents: 1, date: '2099-01-01' },
+  { planId: 'deposit', amountCents: 1, date: '2099-01-01', reference: 'BANK-' + randomUUID() },
   400,
   '收款日期不能在未来',
 );
@@ -945,6 +993,7 @@ await finance('finance', 'record_receipt', {
   planId: 'deposit',
   amountCents: 200000,
   date: day,
+  reference: 'BANK-' + randomUUID(),
 });
 check(
   book.receipts.reduce((sum, r) => sum + r.amountCents, 0) === 234567,
@@ -964,23 +1013,35 @@ await denied(
   409,
   '旧票款版本不能重复入账',
 );
-await finDenied(
+const receiptBankId = book.receipts.find((r) => r.id === receiptId).bankId;
+await denied(
   'finance',
-  'void_receipt',
-  { receiptId, reason: '' },
+  '/api/cashflow',
+  { action: 'void_bank', id: receiptBankId, reason: '', requestId: randomUUID() },
   400,
   '冲销必须提供原因',
 );
-await finance('finance', 'void_receipt', { receiptId, reason: '流水录入错误' });
+await ok('finance', '/api/cashflow', {
+  action: 'void_bank',
+  id: receiptBankId,
+  reason: '流水录入错误',
+  requestId: randomUUID(),
+});
+book = (await ok('finance', '/api/workspace')).finances[projectId];
 check(
   book.receipts.length === 2 &&
     !!book.receipts.find((r) => r.id === receiptId).voidAt,
   '冲销保留原记录和原因',
 );
-await finDenied(
+await denied(
   'finance',
-  'void_receipt',
-  { receiptId, reason: '重复冲销' },
+  '/api/cashflow',
+  {
+    action: 'void_bank',
+    id: receiptBankId,
+    reason: '重复冲销',
+    requestId: randomUUID(),
+  },
   400,
   '不能重复冲销',
 );
@@ -988,6 +1049,7 @@ await finance('finance', 'record_receipt', {
   planId: 'deposit',
   amountCents: 34567,
   date: day,
+  reference: 'BANK-' + randomUUID(),
 });
 await finance('sales', 'request_invoice', {
   amountCents: 1234567,
@@ -1108,10 +1170,10 @@ check(
     !JSON.stringify(dualOps.notifications).includes('12,345.67'),
   '兼岗成员切到运营台后通知不泄漏票款详情',
 );
-op = await projectFor('ops');
+op = await projectFor('sales');
 delete op.workflow.facts['payment-record'];
 op.workflow.facts['technical-needs'] = '隔离字段后继续更新技术记录';
-const preserved = await request('ops', '/api/workspace', {
+const preserved = await request('sales', '/api/workspace', {
   action: 'workflow',
   id: op.id,
   version: op.version,
@@ -1143,20 +1205,22 @@ const legacy = (department, assignee, title) => ({
 project.workflow.tasks = [
   legacy('operations', 'ops', '旧版运营协作'),
   legacy('aftersales', 'after', 'QA-HIDDEN-AFTER-TASK'),
+  legacy('finance', 'finance', '旧版财务协作'),
 ];
 project = await save('manager', 'workflow', project);
-op = await projectFor('ops');
+op = await projectFor('finance');
 check(
   op.workflow.tasks.length === 1 &&
+    op.workflow.tasks[0].department === 'finance' &&
     !JSON.stringify(op).includes('QA-HIDDEN-AFTER-TASK'),
-  '旧版协作按当前工作台过滤',
+  '旧版协作按当前工作台过滤（V2 边界）',
 );
 op.workflow.tasks[0].status = '已完成';
 op.workflow.tasks[0].result = '已办结';
 op.workflow.tasks[0].completedAt = now;
-op = await save('ops', 'workflow', op, '完成协作');
+op = await save('finance', 'workflow', op, '完成协作');
 check(
-  (await projectFor('manager')).workflow.tasks.length === 2,
+  (await projectFor('manager')).workflow.tasks.length === 3,
   '反馈本台协作不删除其他台历史',
 );
 const beforeNotices = (await ok('finance', '/api/workspace')).notifications;
@@ -1170,15 +1234,27 @@ check(
     .length === beforeNotices.filter((n) => !n.readAt).length,
   '已读操作不影响其他成员',
 );
+// Status transitions are recorded through the outcome window, then the closed
+// project may drop the active follow-up plan.
 project = await projectFor('sales');
+const closed = await ok('sales', '/api/outcomes', {
+  action: 'status',
+  projectId,
+  version: project.version,
+  status: '已成交',
+});
 project = await save('sales', 'update', {
-  ...project,
-  stage: '已结项',
+  ...closed.project,
   nextAction: '',
   nextDate: '',
 });
-check(project.stage === '已结项', '已结项项目允许结束后续跟进安排');
-check((await projectFor('manager')).id === projectId, '结项后保留业务历史');
+check(
+  project.nextAction === '' &&
+    project.nextDate === '' &&
+    project.businessStatus === '已成交',
+  '成交项目允许结束后续跟进安排',
+);
+check((await projectFor('manager')).id === projectId, '成交后保留业务历史');
 // Optional ephemeral fixture for manual browser verification; never ship credentials.
 if (process.env.QA_BROWSER_FIXTURE) {
   const file = resolve(process.env.QA_BROWSER_FIXTURE);

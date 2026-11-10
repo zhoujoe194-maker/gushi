@@ -124,6 +124,9 @@ try {
   await run('deployment', 'tests/deployment-smoke.mjs', {
     QA_DEPLOY_PORT: String(basePort + offset++),
   });
+  await run('d1-portals', 'tests/d1-portals.mjs', {
+    QA_D1_PORT: String(basePort + offset++),
+  });
   await run('sales-migration', 'tests/sales-reports-migration.mjs');
   const summary = {
     passed: results.reduce((n, r) => n + r.passed, 0),

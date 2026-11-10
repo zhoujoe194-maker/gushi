@@ -1337,12 +1337,12 @@ export function OrganizationMatrix() {
     <section className="panel organization-panel">
       <Heading
         title="组织分工与项目协作"
-        description="五个工作台按职责协作；管理派单，各台办理与反馈。"
+        description="销售、管理、财务三个工作台按职责协作；运营与售后在管理工作台内办理与反馈。"
       />
       <div className="organization-chain">
-        <span>管理</span>
+        <span>销售 · 管理 · 财务</span>
         <ChevronRight size={16} />
-        <strong>售后 · 销售 · 财务 · 运营</strong>
+        <strong>管理工作台内：管理岗 · 运营岗 · 售后岗</strong>
       </div>
       <div className="organization-departments">
         {DEPARTMENTS.map((d) => (

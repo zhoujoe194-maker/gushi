@@ -9,8 +9,13 @@ import {
   UserRound,
   LockKeyhole,
 } from 'lucide-react';
-import { Member, roleInfo } from '../../team';
-import { grantedDesks, needsOnboarding, realNameProblem } from '../../access';
+import { Member, portalInfo, roleInfo } from '../../team';
+import {
+  grantedDesks,
+  grantedPortals,
+  needsOnboarding,
+  realNameProblem,
+} from '../../access';
 const subscribeHydration = () => () => {};
 export default function Security({
   member,
@@ -82,13 +87,17 @@ export default function Security({
             ))}
           </ol>
           <div className="onboarding-access">
-            <small>管理人员已为你开通</small>
+            <small>管理人员已为你开通的工作台</small>
             <div>
-              {grantedDesks(member).map((d) => (
-                <span key={d}>{roleInfo(d).name}台</span>
+              {grantedPortals(member).map((p) => (
+                <span key={p}>{portalInfo(p).name}</span>
               ))}
             </div>
-            <p>岗位由管理人员分配。如有不符，请联系管理台调整。</p>
+            <p>
+              岗位范围：
+              {grantedDesks(member).map((d) => roleInfo(d).name).join('、')}
+              。岗位由管理人员分配，如有不符请联系管理工作台调整。
+            </p>
           </div>
         </section>
         <section className="password-card onboarding-card">

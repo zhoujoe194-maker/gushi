@@ -2,7 +2,7 @@
 import {useState,useSyncExternalStore} from 'react';
 import Link from 'next/link';
 import {Building2,ArrowRight,ShieldCheck,Eye,EyeOff,Mail,LockKeyhole,Users,UserRoundCheck,Layers3,Check} from 'lucide-react';
-import {ROLES,Role,Session} from './team';
+import {PORTALS,Session} from './team';
 import {entryDestination} from './access';
 
 function subscribeToSearch(onChange:()=>void) {
@@ -10,7 +10,7 @@ function subscribeToSearch(onChange:()=>void) {
   return ()=>window.removeEventListener('popstate',onChange);
 }
 
-export default function Entry({session,error,initialized=true}:{session?:Session|null;error?:string;role?:Role;initialized?:boolean}) {
+export default function Entry({session,error,initialized=true}:{session?:Session|null;error?:string;initialized?:boolean}) {
   const search=useSyncExternalStore(subscribeToSearch,()=>location.search,()=>null);
   const hydrated=search!==null;
   const [identifier,setIdentifier]=useState('');
@@ -50,9 +50,9 @@ export default function Entry({session,error,initialized=true}:{session?:Session
       <section className="password-intro" aria-labelledby="login-page-title">
         <span className="entry-eyebrow">一个账号，连接你的每一份工作</span>
         <h1 id="login-page-title">从这里登录，<br/>在各岗位协同。</h1>
-        <p>项目、任务、消息与业务记录集中处理。<br/>管理人员分配权限，你专注自己的工作。</p>
-        <div className="login-desks" aria-label="公司工作台">{ROLES.map(r=><span key={r.id}>{r.name}</span>)}</div>
-        <div className="login-onboarding-preview">{[[Users,'管理开通账号','先分配可进入的工作台'],[UserRoundCheck,'本人完善资料','首次填写真实姓名并改密'],[Layers3,'进入授权工作台','单台直达，多台选择与切换']].map(([Icon,title,detail])=>{
+        <p>项目、任务、消息与业务记录集中处理。<br/>销售、财务各有独立入口，运营与售后在管理工作台内协作。</p>
+        <div className="login-desks" aria-label="公司工作台">{PORTALS.map(p=><span key={p.id}>{p.name}</span>)}</div>
+        <div className="login-onboarding-preview">{[[Users,'管理开通账号','先分配可进入的工作台'],[UserRoundCheck,'本人完善资料','首次填写真实姓名并改密'],[Layers3,'进入授权工作台','单个工作台直达，多个先选择再切换']].map(([Icon,title,detail])=>{
           const I=Icon as typeof Users;
           return <div key={String(title)}><span><I size={19} aria-hidden="true"/></span><div><strong>{String(title)}</strong><p>{String(detail)}</p></div><Check size={15} aria-hidden="true"/></div>;
         })}</div>
@@ -97,9 +97,9 @@ export default function Entry({session,error,initialized=true}:{session?:Session
     </div>
     <section id="first-use-guide" className="first-use-guide" aria-labelledby="first-use-title" hidden={!showGuide}>
       <div><span className="entry-eyebrow">GET STARTED</span><h2 id="first-use-title">网站刚启用，大家怎样开始？</h2><p>先开通、再登录，账号与真实员工一一对应。</p></div>
-      <div className="first-use-steps">{[['公司先启用管理员','首次打开网站后，管理员填写部署负责人提供的启用码、本人真实姓名和个人密码，完成公司启用。'],['管理台添加员工并授权','在“人员管理”添加邮箱或手机号、初始密码，勾选可进入的工作台，并设置默认台与分部。'],['员工首次登录完善资料','管理人员提供公司网址、登录账号和初始密码；员工本人填写真实姓名，并设置个人密码。'],['进入对应岗位开始工作','只有一个台时直接进入；拥有多个台时选择本次工作台，登录后仍可在顶部切换。']].map(([title,body],i)=><div key={title}><span>{i+1}</span><h3>{title}</h3><p>{body}</p></div>)}</div>
-      <div className="first-use-foot"><span>岗位在开通账号时由管理台设定；需要调整时联系管理人员。</span><a href="/demo?view=onboarding">体验首次登录流程<ArrowRight size={14} aria-hidden="true"/></a></div>
+      <div className="first-use-steps">{[['公司先启用管理员','首次打开网站后，管理员填写部署负责人提供的启用码、本人真实姓名和个人密码，完成公司启用。'],['管理工作台添加员工并授权','在“人员管理”添加邮箱或手机号、初始密码，勾选可进入的工作台（销售/管理/财务），设置默认工作台与分部；管理、运营、售后在管理工作台内按岗位协作。'],['员工首次登录完善资料','管理人员提供公司网址、登录账号和初始密码；员工本人填写真实姓名，并设置个人密码。'],['进入对应工作台开始工作','只有一个工作台时直接进入；拥有多个工作台时选择本次工作台，登录后仍可在页面顶部切换。']].map(([title,body],i)=><div key={title}><span>{i+1}</span><h3>{title}</h3><p>{body}</p></div>)}</div>
+      <div className="first-use-foot"><span>工作台权限在开通账号时由管理工作台设定；需要调整时联系管理人员。</span><a href="/demo?view=onboarding">体验首次登录流程<ArrowRight size={14} aria-hidden="true"/></a></div>
     </section>
-    <footer className="entry-footer"><span>广州总部 · 湖南分部</span><span>仅限已授权公司成员使用</span></footer>
+    <footer className="entry-footer"><span>一个账号，连接三个工作台</span><span>仅限已授权公司成员使用</span></footer>
   </main>;
 }

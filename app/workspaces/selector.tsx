@@ -6,20 +6,24 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   Wallet,
-  Users,
   ShieldCheck,
-  HeartHandshake,
   LogOut,
   Star,
 } from 'lucide-react';
-import { Member, roleInfo } from '../team';
-import { grantedDesks, defaultDesk } from '../access';
+import {
+  Member,
+  PORTALS,
+  Portal,
+  SCOPES_IN_PORTAL,
+  roleInfo,
+} from '../team';
+import { grantedPortals, defaultPortal, scopesInPortal } from '../access';
+// D1: the only entrances are the three workbenches. Operations and aftersales
+// still have their own granular scope inside the management workbench.
 const icons = {
   sales: BriefcaseBusiness,
-  finance: Wallet,
-  operations: Users,
-  aftersales: HeartHandshake,
   management: ShieldCheck,
+  finance: Wallet,
 };
 const subscribeName = () => () => {};
 export default function DeskSelector({
@@ -42,6 +46,7 @@ export default function DeskSelector({
     },
     () => member.name,
   );
+  const portals: Portal[] = demo ? [...PORTALS.map((p) => p.id)] : grantedPortals(member);
   return (
     <main className="desk-selector-shell">
       <header>
@@ -73,33 +78,38 @@ export default function DeskSelector({
         </div>
       </header>
       <section className="desk-selector-title">
-        <span className="entry-eyebrow">YOUR WORKSPACES</span>
+        <span className="entry-eyebrow">THREE WORKBENCHES</span>
         <h1>选择本次工作的工作台</h1>
         <p>
-          {demo ? '演示一个账号兼任多个岗位。' : '你已完成账号设置。'}
-          这里只显示管理人员为你开通的工作台，之后也可在页面顶部切换。
+          {demo
+            ? '演示账号可进入全部三个工作台。'
+            : '你已完成账号设置。这里只显示管理人员为你开通的工作台。'}
+          三个工作台是日常工作的主要入口；运营、售后在管理工作台内协作，无需单独进入。
         </p>
       </section>
       <div className="desk-selector-grid">
-        {grantedDesks(member).map((d) => {
-          const Icon = icons[d];
+        {portals.map((p) => {
+          const portal = PORTALS.find((x) => x.id === p)!;
+          const Icon = icons[p];
+          const scopes = demo ? SCOPES_IN_PORTAL[p] : scopesInPortal(member, p);
           return (
             <Link
-              key={d}
-              className={'desk-selector-card desk-' + d}
-              href={demo ? '/demo?role=' + d + '&account=multi' : '/work/' + d}
+              key={p}
+              className={'desk-selector-card desk-' + p}
+              href={demo ? '/demo?role=' + p : '/work/' + p}
             >
               <span className="desk-selector-symbol">
                 <Icon size={25} />
               </span>
-              {d === defaultDesk(member) && (
+              {p === defaultPortal(member) && (
                 <small>
                   <Star size={11} />
                   默认工作台
                 </small>
               )}
-              <h2>{roleInfo(d).name}台</h2>
-              <p>{roleInfo(d).description}</p>
+              <h2>{portal.name}</h2>
+              <p>{portal.description}</p>
+              <p>岗位范围：{scopes.map((d) => roleInfo(d).name).join(' · ')}</p>
               <span className="desk-selector-enter">
                 进入工作台
                 <ArrowRight size={17} />
@@ -111,7 +121,7 @@ export default function DeskSelector({
       <div className="desk-selector-help">
         <ShieldCheck size={17} />
         <p>
-          需要增加或调整工作台？请联系管理台。切换工作台会同步切换对应的项目、任务和消息范围。
+          需要增加或调整工作台？请联系管理工作台。切换工作台会同步切换对应的项目、任务和消息范围。
         </p>
       </div>
     </main>

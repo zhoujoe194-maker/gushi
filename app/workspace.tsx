@@ -59,6 +59,7 @@ import {
   LogOut,
   MessagesSquare,
   Layers3,
+  BookOpen,
 } from "lucide-react";
 import {
   WorkflowOverview,
@@ -97,26 +98,162 @@ import {
   isActive,
   daysSince,
 } from "./model";
-const ALL_NAV = [
-  { id: "overview", label: "经营总览", icon: LayoutDashboard },
+import type { LucideIcon } from "lucide-react";
+// D1: navigation is defined per workbench instead of one shared five-desk
+// list. A user only sees entries their effective granular scope can open, so
+// the management workbench never shows project/finance/member links to
+// operations or aftersales colleagues whose permissions exclude them.
+type NavItem = { id: string; label: string; icon: LucideIcon; sep?: boolean };
+type QuickEntry = { label: string; icon: LucideIcon; onClick: () => void };
+const SALES_NAV: NavItem[] = [
+  { id: "overview", label: "销售工作台", icon: LayoutDashboard },
   { id: "projects", label: "项目协同", icon: BriefcaseBusiness },
-  { id: "tasks", label: "本台任务", icon: SquareCheckBig },
-  { id: "messages", label: "消息中心", icon: MessagesSquare, Layers3 },
+  { id: "tasks", label: "任务下发与跟进", icon: SquareCheckBig },
+  { id: "finance", label: "合同与票款", icon: Wallet },
+  { id: "results", label: "我的项目结果", icon: History },
   { id: "filings", label: "厂家报备", icon: FileText },
   { id: "pipeline", label: "阶段看板", icon: Columns3 },
-  { id: "meetings", label: "周会与任务", icon: CalendarDays },
-  { id: "finance", label: "合同与票款", icon: Wallet },
-  { id: "cashflow", label: "现金流与资金风险", icon: Wallet },
-  { id: "reimbursements", label: "项目报销", icon: Wallet },
-  { id: "company-expenses", label: "工资和固定费用", icon: Wallet },
-  { id: "members", label: "人员管理", icon: Users },
   { id: "sales", label: "销售考核", icon: ClipboardCheck },
-  { id: "results", label: "我的项目结果", icon: History },
-  { id: "guide", label: "跟进指南", icon: History },
+  { id: "messages", label: "消息中心", icon: MessagesSquare, sep: true },
+  { id: "guide", label: "跟进指南", icon: BookOpen },
   { id: "products", label: "品牌与产品", icon: Package },
-  { id: "settings", label: "组织与设置", icon: Settings },
 ];
-import { grantedDesks, hasDesk, inDesk, defaultDesk } from "./access";
+const MANAGER_NAV: NavItem[] = [
+  { id: "overview", label: "经营总览", icon: LayoutDashboard },
+  { id: "projects", label: "项目协同", icon: BriefcaseBusiness },
+  { id: "tasks", label: "派单与督办", icon: SquareCheckBig },
+  { id: "results", label: "员工结果与复查", icon: History },
+  { id: "members", label: "人员管理", icon: Users },
+  { id: "meetings", label: "周会与任务", icon: CalendarDays },
+  { id: "finance", label: "合同与票款（只读）", icon: Wallet },
+  { id: "cashflow", label: "现金流与资金风险（只读）", icon: Wallet },
+  { id: "filings", label: "厂家报备", icon: FileText },
+  { id: "pipeline", label: "阶段看板", icon: Columns3 },
+  { id: "sales", label: "销售考核", icon: ClipboardCheck },
+  { id: "messages", label: "消息中心", icon: MessagesSquare, sep: true },
+  { id: "guide", label: "跟进指南", icon: BookOpen },
+  { id: "products", label: "品牌与产品", icon: Package },
+];
+const SETTINGS_NAV: NavItem = {
+  id: "settings",
+  label: "组织与设置",
+  icon: Settings,
+};
+const FINANCE_NAV: NavItem[] = [
+  { id: "overview", label: "财务总览", icon: LayoutDashboard },
+  { id: "finance", label: "合同与票款", icon: Wallet },
+  { id: "cashflow", label: "项目收支与现金流", icon: Wallet },
+  { id: "company-expenses", label: "工资和固定费用", icon: Wallet },
+  { id: "reimbursements", label: "项目报销", icon: Wallet },
+  { id: "projects", label: "项目协同（只读）", icon: BriefcaseBusiness },
+  { id: "tasks", label: "本台任务", icon: SquareCheckBig },
+  { id: "messages", label: "消息中心", icon: MessagesSquare, sep: true },
+  { id: "guide", label: "跟进指南", icon: BookOpen },
+];
+const MANAGEMENT_SCOPES: Desk[] = ["management", "operations", "aftersales"];
+const projectArea = (m: Member) =>
+  isManager(m) || m.role === "sales" || m.role === "finance";
+const managementScopeOf = (m: Member): Desk =>
+  m.scope && MANAGEMENT_SCOPES.includes(m.scope) ? m.scope : "management";
+function operationsNav(scope: Desk, filingsAuthorized: boolean): NavItem[] {
+  const after = scope === "aftersales";
+  return [
+    {
+      id: "overview",
+      label: after ? "售后首页" : "运营首页",
+      icon: LayoutDashboard,
+    },
+    { id: "tasks", label: "本台任务", icon: SquareCheckBig },
+    ...(filingsAuthorized
+      ? ([{ id: "filings", label: "厂家报备", icon: FileText }] as NavItem[])
+      : []),
+    { id: "messages", label: "消息中心", icon: MessagesSquare, sep: true },
+    { id: "reimbursements", label: "项目报销", icon: Wallet },
+    { id: "guide", label: "跟进指南", icon: BookOpen },
+    { id: "products", label: "品牌与产品", icon: Package },
+  ];
+}
+function navigationFor(member: Member, portal: Portal): NavItem[] {
+  if (portal === "sales") return SALES_NAV;
+  if (portal === "finance") return FINANCE_NAV;
+  const scope = managementScopeOf(member);
+  // Only an account that actually holds the management desk grant can enter
+  // the manager scope inside the management workbench.
+  if (scope === "management" && isManager(member))
+    return member.role === "owner" ? [...MANAGER_NAV, SETTINGS_NAV] : MANAGER_NAV;
+  return operationsNav(scope, projectArea(member));
+}
+function scopeName(scope: Desk) {
+  return roleInfo(scope).name + "岗";
+}
+function workbenchLabel(member: Member, portal: Portal) {
+  const active = (member.portal ?? portal) as Portal;
+  const name = portalInfo(active).name;
+  if (active === "management") {
+    const scope = managementScopeOf(member);
+    return scope === "management" ? name : name + " · " + scopeName(scope);
+  }
+  return name;
+}
+function overviewLabel(member: Member, portal: Portal) {
+  const active = (member.portal ?? portal) as Portal;
+  if (active === "sales") return "销售工作台";
+  if (active === "finance") return "财务总览";
+  if (managementScopeOf(member) === "operations") return "运营首页";
+  if (managementScopeOf(member) === "aftersales") return "售后首页";
+  return "经营总览";
+}
+function overviewDescription(member: Member, portal: Portal) {
+  const active = (member.portal ?? portal) as Portal;
+  if (active === "sales")
+    return "今日跟进、逾期项目与需要补充的合同资料，先处理后更新结果。";
+  if (active === "finance")
+    return "合同审核队列、项目收支与现金流风险，按岗位权限处理。";
+  const scope = managementScopeOf(member);
+  if (scope === "operations")
+    return "运营岗位的本台任务、到期提醒与项目报销，处理结果同步管理工作台。";
+  if (scope === "aftersales")
+    return "售后问题、验收回访与交接事项，处理结果同步管理工作台。";
+  return "公司经营、员工结果、项目风险与各岗位任务，一处掌握。";
+}
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  sales: "工作记录、销售周报、销售月报与月度绩效，提交与审核有据可查。",
+  projects:
+    "围绕销售流程，明确每一阶段的主责、协作、交接与下一步。",
+  tasks:
+    "销售或管理下发，承办岗位处理并反馈，管理工作台验收；无需先创建项目。",
+  filings: "按产品跟踪厂家判定与报备更新，避免遗漏关键保护环节。",
+  results: "查看项目状态与原因，形成可复查的员工结果。",
+  cashflow: "项目收支、应收应付、现金流预测与资金风险。",
+  reimbursements: "向本人负责或获授权的项目申请与登记费用报销。",
+  "company-expenses": "工资与固定费用按月登记，按账期核对实付。",
+  guide: "把公司培训中的工作要点，放在每个项目阶段旁。",
+  pipeline: "从线索到履约，一眼看清项目所处阶段。",
+  products: "按品牌、专业与使用区域，找到适合项目的产品。",
+  settings: "按公司组织分工协同，项目对接人和工作规则可持续调整。",
+  meetings: "每周一会议纪要、周总任务与行动项落实。",
+  finance:
+    "合同审核、应收、收款与开票记录共享，敏感操作按岗位授权。",
+  messages:
+    "个人私聊、工作台沟通与项目群聊，交接说明和反馈集中查看。",
+  members:
+    "添加成员、分配岗位权限，跟踪首次姓名确认与账号激活。",
+};
+function HomeQuickLinks({ entries }: { entries: QuickEntry[] }) {
+  if (!entries.length) return null;
+  return (
+    <div className="role-shortcuts home-quick-links" aria-label="快捷入口">
+      {entries.map((entry) => (
+        <button key={entry.label} type="button" onClick={entry.onClick}>
+          <entry.icon size={17} />
+          {entry.label}
+          <ArrowRight size={14} />
+        </button>
+      ))}
+    </div>
+  );
+}
+import { grantedPortals, hasPortal, hasDesk, inPortal, scopesInPortal } from "./access";
 import { FilingEditor } from "./filing-editor";
 import {
   RoleHome,
@@ -126,8 +263,6 @@ import {
 } from "./role-panels";
 import {
   Member,
-  Role,
-  ROLES,
   Notification,
   roleInfo,
   isManager,
@@ -136,12 +271,14 @@ import {
   canViewFinance,
   mayViewBook,
   deskOf,
-  visibleProject,
-  isScopedManager,
   Desk,
+  Portal,
+  PORTAL_IDS,
+  SCOPES_IN_PORTAL,
+  portalInfo,
 } from "./team";
 import { FinanceBook, emptyBook, totals } from "./finance-model";
-import { roleDemo, demoMembers } from "./demo-team";
+import { roleDemo, demoRoleMember, demoMembers, demoMultiMember } from "./demo-team";
 import TaskCenter, { TaskEditor } from "./task-center";
 import { readTaskImage, type TaskImage } from "./task-images";
 import SalesCenter from "./sales/center";
@@ -276,18 +413,33 @@ function Modal({
   );
 }
 export default function Workspace({
-  portalRole = "owner",
+  portal = "management",
+  initialScope,
   initialMember,
   demoEnabled = false,
   demoAccount = false,
+  demoScope,
 }: {
-  portalRole?: Role;
+  // D1: the three user-facing workbenches. Granular desk identity is only
+  // selected inside a workbench through the 岗位范围 switcher.
+  portal?: Portal;
+  initialScope?: Desk;
   initialMember?: Member;
   demoEnabled?: boolean;
   demoAccount?: boolean;
+  demoScope?: Desk;
 }) {
-  const [member, setMember] = useState<Member>(
-      initialMember || demoMembers.find((m) => m.role === portalRole)!,
+  // Resolve the effective granular scope exactly like the server does, so a
+  // deep link such as /work/management?scope=operations works even before the
+  // first data fetch. Members always carry a scope after inPortal().
+  const [member, setMember] = useState<Member>(() =>
+      initialMember
+        ? inPortal(
+            initialMember,
+            portal,
+            initialScope ?? initialMember.scope,
+          )
+        : demoRoleMember(portal, demoScope, demoAccount),
     ),
     [members, setMembers] = useState<Member[]>(demoEnabled ? demoMembers : []),
     [finances, setFinances] = useState<Record<string, FinanceBook>>({}),
@@ -303,57 +455,83 @@ export default function Workspace({
     [taskFocus, setTaskFocus] = useState(""),
     [taskDesk, setTaskDesk] = useState("全部");
   const visibleTasks = deskTasks.filter((t) => inTaskScope(t, viewMember));
-  const allowed = (() => {
-    if (isManager(viewMember))
-      return [
-        "overview",
-        "projects",
-        "tasks",
-        "filings",
-        "pipeline",
-        "finance",
-        "members",
-        "meetings",
-        "guide",
-        "products",
-        ...(member.role === "owner" ? ["settings"] : []),
-      ];
-    if (viewMember.role === "sales")
-      return [
-        "overview",
-        "projects",
-        "tasks",
-        "filings",
-        "pipeline",
-        "finance",
-        "guide",
-        "products",
-      ];
-    if (viewMember.role === "finance")
-      return ["overview", "finance", "projects", "tasks", "guide"];
-    if (viewMember.role === "hr") return ["overview", "tasks", "guide"];
-    return ["overview", "projects", "tasks", "filings", "guide", "products"];
-  })();
-  allowed.push("messages");
-  if(canViewFinance(viewMember)) allowed.push("company-expenses", "cashflow");
-  allowed.push("reimbursements");
-  if (isManager(viewMember) || viewMember.role === "sales")
-    allowed.push("sales", "results");
-  const NAV = ALL_NAV.filter((n) => allowed.includes(n.id)).map((n) =>
-    n.id === "results" && isManager(viewMember) ? {...n,label:"员工结果与复查"} :
-    n.id === "overview"
-      ? { ...n, label: roleInfo(viewMember.role).portal }
-      : n.id === "tasks"
-        ? {
-            ...n,
-            label: isManager(viewMember)
-              ? "派单与督办"
-              : viewMember.role === "sales"
-                ? "任务下发与跟进"
-                : "本台任务",
-          }
-        : n,
-  );
+  const activePortal = (viewMember.portal ?? portal) as Portal;
+  const NAV = navigationFor(viewMember, activePortal);
+  const allowed = NAV.map((n) => n.id);
+  const portalChoices: Portal[] = demoEnabled
+    ? demoAccount
+      ? grantedPortals(demoMultiMember)
+      : [...PORTAL_IDS]
+    : grantedPortals(viewMember);
+  const scopeChoices: Desk[] = demoEnabled
+    ? demoAccount
+      ? scopesInPortal(demoMultiMember, activePortal)
+      : SCOPES_IN_PORTAL[activePortal]
+    : scopesInPortal(viewMember, activePortal);
+  const currentScope: Desk =
+    viewMember.scope && scopeChoices.includes(viewMember.scope)
+      ? viewMember.scope
+      : scopeChoices[0] ?? managementScopeOf(viewMember);
+  const pageDescription = (id: string) =>
+    id === "overview"
+      ? overviewDescription(viewMember, activePortal)
+      : TAB_DESCRIPTIONS[id] || "";
+  // Demo only: the fake account may browse every identity inside the three
+  // workbenches; live accounts are strictly limited to granted portals/scopes.
+  const demoIdentityOptions: {
+    value: string;
+    label: string;
+    portal: Portal;
+    scope?: Desk;
+  }[] = [
+    { value: "sales", label: "销售工作台", portal: "sales" },
+    {
+      value: "management",
+      label: "管理工作台 · 管理岗",
+      portal: "management",
+      scope: "management",
+    },
+    {
+      value: "management:operations",
+      label: "管理工作台 · 运营岗",
+      portal: "management",
+      scope: "operations",
+    },
+    {
+      value: "management:aftersales",
+      label: "管理工作台 · 售后岗",
+      portal: "management",
+      scope: "aftersales",
+    },
+    { value: "finance", label: "财务工作台", portal: "finance" },
+  ];
+  const demoIdentityChoices = demoAccount
+    ? demoIdentityOptions.filter(
+        (choice) =>
+          hasPortal(demoMultiMember, choice.portal) &&
+          (!choice.scope ||
+            scopesInPortal(demoMultiMember, choice.portal).includes(
+              choice.scope,
+            )),
+      )
+    : demoIdentityOptions;
+  const demoIdentityValue =
+    activePortal === "management"
+      ? "management" +
+        (currentScope === "management" ? "" : ":" + currentScope)
+      : activePortal;
+  function demoHref(next: Portal, scope?: Desk) {
+    const keepMulti = demoAccount && hasPortal(demoMultiMember, next);
+    return (
+      "/demo?role=" +
+      next +
+      (next === "management" && scope ? "&scope=" + scope : "") +
+      (keepMulti ? "&account=multi" : "")
+    );
+  }
+  function liveHref(next: Portal, scope?: Desk) {
+    return "/work/" + next + (scope ? "?scope=" + scope : "");
+  }
 
   const [tab, setTab] = useState("overview"),
     [demo, setDemo] = useState(demoEnabled),
@@ -410,8 +588,7 @@ export default function Workspace({
     projectId: string;
     nonce: number;
   }>();
-  const [region, setRegion] = useState("全部分部"),
-    [department, setDepartment] = useState("全部部门"),
+  const [department, setDepartment] = useState("全部部门"),
     [taskModal, setTaskModal] = useState<{
       projectId: string;
       version: number;
@@ -437,16 +614,25 @@ export default function Workspace({
     )
       setTab(target);
     if (demoEnabled) {
-      const state = roleDemo(portalRole, demoAccount);
+      const state = roleDemo(portal, demoScope, demoAccount);
+      // Demo tasks are dispatched to the selected granular identity so an
+      // operations/aftersales/sales demo actually has work to act on.
+      const tasks = demoDeskTasks().map((task) =>
+        !isManager(state.member) && task.desk === deskOf(state.member.role)
+          ? {
+              ...task,
+              assigneeId: state.member.id,
+              assigneeName: state.member.name,
+            }
+          : task,
+      );
       setMember(state.member);
       setMembers(state.members);
       setProjects(state.projects);
       setEvents(state.events);
       setFinances(state.finances);
-      setDeskTasks(demoDeskTasks());
-      setLinkages(
-        linkageSummary(state.projects, state.finances, demoDeskTasks()),
-      );
+      setDeskTasks(tasks);
+      setLinkages(linkageSummary(state.projects, state.finances, tasks));
       setReady(true);
     } else loadLive();
   }, []);
@@ -474,10 +660,13 @@ export default function Workspace({
   const workspaceFetch = useCallback(
     (url: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
-      headers.set("X-Workspace-Desk", deskOf(portalRole));
+      // D1: every workspace request is resolved against the active workbench
+      // and the effective granular scope, never the retired five-desk header.
+      headers.set("X-Workspace-Portal", portal);
+      if (member.scope) headers.set("X-Workspace-Scope", member.scope);
       return fetch(url, { ...init, headers });
     },
-    [portalRole],
+    [portal, member.scope],
   );
   async function loadLive(silent = false) {
     if (!silent) setLoading(true);
@@ -534,8 +723,8 @@ export default function Workspace({
       setNotifications(data.notifications);
       setLinkages(data.linkages || []);
       setReady(true);
-      if (deskOf(data.member.role) !== deskOf(portalRole))
-        window.location.href = "/work/" + deskOf(data.member.role);
+      if (data.member.portal && data.member.portal !== activePortal)
+        window.location.href = "/work/" + data.member.portal;
     } catch (e) {
       if (!silent) setError(e instanceof Error ? e.message : "加载失败");
     } finally {
@@ -544,8 +733,14 @@ export default function Workspace({
   }
   function switchMode() {
     window.location.href = demo
-      ? "/work/" + portalRole
-      : "/demo?role=" + portalRole + (demoAccount ? "&account=multi" : "");
+      ? liveHref(
+          activePortal,
+          activePortal === "management" ? currentScope : undefined,
+        )
+      : demoHref(
+          activePortal,
+          activePortal === "management" ? currentScope : undefined,
+        );
   }
   async function financeAction(
     project: Project,
@@ -890,9 +1085,9 @@ export default function Workspace({
     setOwner("全部负责人");
     setBrand("全部品牌");
   }
-  const scopeProjects = projects.filter(
-    (p) => region === "全部分部" || workflowOf(p).region === region,
-  );
+  // V2 has one company scope; legacy regions stay readable on records but are
+  // no longer used to filter the workspace.
+  const scopeProjects = projects;
   const homeLinkages = demo
     ? linkageSummary(projects, finances, deskTasks)
     : linkages;
@@ -1357,6 +1552,84 @@ export default function Workspace({
       )}
     </div>
   );
+  // 各工作台首页的快捷入口：只链接当前岗位实际可用的功能。
+  const salesQuickEntries: QuickEntry[] = [
+    { label: "新建项目", icon: Plus, onClick: () => newProject() },
+    { label: "快速跟进", icon: Clock3, onClick: () => goFilter("今日待办") },
+    {
+      label: "商务报价",
+      icon: FileText,
+      onClick: () => {
+        const target = projects.find((p) => canEditProject(p, viewMember));
+        if (target) {
+          setDetail(target.id);
+          setDetailTab("商务与交付");
+        } else navigate("projects");
+      },
+    },
+    { label: "客户回款", icon: Wallet, onClick: () => navigate("finance") },
+    {
+      label: "我的项目结果",
+      icon: History,
+      onClick: () => navigate("results"),
+    },
+    {
+      label: "相关协作任务",
+      icon: SquareCheckBig,
+      onClick: () => navigate("tasks"),
+    },
+  ];
+  const managerQuickEntries: QuickEntry[] = [
+    {
+      label: "员工结果与复查",
+      icon: History,
+      onClick: () => navigate("results"),
+    },
+    {
+      label: "派单与督办",
+      icon: SquareCheckBig,
+      onClick: () => navigate("tasks"),
+    },
+    { label: "人员管理", icon: Users, onClick: () => navigate("members") },
+    {
+      label: "周会与任务",
+      icon: CalendarDays,
+      onClick: () => navigate("meetings"),
+    },
+  ];
+  const operationsQuickEntries: QuickEntry[] = [
+    { label: "本台任务", icon: SquareCheckBig, onClick: () => navigate("tasks") },
+    {
+      label: "消息中心",
+      icon: MessagesSquare,
+      onClick: () => navigate("messages"),
+    },
+    {
+      label: "项目报销",
+      icon: Wallet,
+      onClick: () => navigate("reimbursements"),
+    },
+  ];
+  const financeQuickEntries: QuickEntry[] = [
+    { label: "合同审核", icon: ShieldCheck, onClick: () => navigate("finance") },
+    { label: "项目收支", icon: Wallet, onClick: () => navigate("cashflow") },
+    { label: "应收应付", icon: Wallet, onClick: () => navigate("finance") },
+    {
+      label: "工资和固定费用",
+      icon: Wallet,
+      onClick: () => navigate("company-expenses"),
+    },
+    {
+      label: "现金流与资金风险",
+      icon: Activity,
+      onClick: () => navigate("cashflow"),
+    },
+    {
+      label: "项目垫资与银行核销",
+      icon: Building2,
+      onClick: () => navigate("cashflow"),
+    },
+  ];
   return (
     <div className="app-shell">
       <a
@@ -1412,12 +1685,12 @@ export default function Workspace({
           </span>
         </a>
         <div className="workspace-label">
-          岗位协作台 <span>V4.0</span>
+          {portalInfo(activePortal).name} <span>V2</span>
         </div>
         <nav aria-label="主要导航">
-          {NAV.map((n, i) => (
+          {NAV.map((n) => (
             <React.Fragment key={n.id}>
-              {i === 5 && <div className="nav-divider" />}
+              {n.sep && <div className="nav-divider" />}
               <button
                 className={"nav-item " + (tab === n.id ? "active" : "")}
                 aria-current={tab === n.id ? "page" : undefined}
@@ -1454,7 +1727,7 @@ export default function Workspace({
             <div>
               <strong>{member.name}</strong>
               <small>
-                {roleInfo(viewMember.role).name} · {member.region}
+                {workbenchLabel(viewMember, activePortal)} · {member.region}
               </small>
             </div>
             <ChevronDown size={14} />
@@ -1501,28 +1774,50 @@ export default function Workspace({
                 <b>{notifications.filter((n) => !n.readAt).length}</b>
               )}
             </button>
-            <label className="desk-switcher">
-              <Layers3 size={14} />
-              <select
-                aria-label="切换工作台"
-                value={deskOf(viewMember.role)}
-                onChange={(e) =>
-                  window.location.assign(
-                    demo
-                      ? "/demo?role=" +
-                          e.target.value +
-                          (demoAccount ? "&account=multi" : "")
-                      : "/work/" + e.target.value,
-                  )
-                }
-              >
-                {grantedDesks(viewMember).map((d) => (
-                  <option key={d} value={d}>
-                    {roleInfo(d).name}台
-                  </option>
-                ))}
-              </select>
-            </label>
+            {portalChoices.length > 1 && (
+              <label className="desk-switcher">
+                <Layers3 size={14} />
+                <select
+                  aria-label="切换工作台"
+                  value={activePortal}
+                  onChange={(e) => {
+                    const next = e.target.value as Portal;
+                    window.location.assign(
+                      demo ? demoHref(next) : liveHref(next),
+                    );
+                  }}
+                >
+                  {portalChoices.map((p) => (
+                    <option key={p} value={p}>
+                      {portalInfo(p).name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {scopeChoices.length > 1 && (
+              <label className="desk-switcher">
+                <SlidersHorizontal size={14} />
+                <select
+                  aria-label="切换岗位范围"
+                  value={currentScope}
+                  onChange={(e) => {
+                    const next = e.target.value as Desk;
+                    window.location.assign(
+                      demo
+                        ? demoHref(activePortal, next)
+                        : liveHref(activePortal, next),
+                    );
+                  }}
+                >
+                  {scopeChoices.map((scope) => (
+                    <option key={scope} value={scope}>
+                      {scopeName(scope)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               className="icon-button"
               aria-label="同步最新数据"
@@ -1589,11 +1884,11 @@ export default function Workspace({
                 </>
               ) : (
                 <>
-                  <b>{roleInfo(viewMember.role).portal}</b>
+                  <b>{workbenchLabel(viewMember, activePortal)}</b>
                   <span className="banner-detail">
                     {" "}
                     {
-                      "以本人账号处理当前台的项目、任务和消息；可在顶部切换已授权工作台。"
+                      "以本人账号处理当前工作台的业务、任务和消息；可在顶部切换已授权工作台与岗位范围。"
                     }
                   </span>
                 </>
@@ -1621,51 +1916,16 @@ export default function Workspace({
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                {tab === "overview"
-                  ? "GUSHI · PROJECT COLLABORATION"
-                  : "PROJECT SALES WORKSPACE"}
+                {portalInfo(activePortal).short.toUpperCase()} WORKBENCH
               </div>
               <h1 id="workspace-page-title" ref={pageTitleRef} tabIndex={-1}>
-                {tab === "overview" ? roleInfo(viewMember.role).portal : title}
+                {tab === "overview"
+                  ? overviewLabel(viewMember, activePortal)
+                  : title}
               </h1>
-              <p>
-                {
-                  (
-                    {
-                      sales:
-                        "工作记录、销售周报、销售月报与月度绩效，提交与审核有据可查。",
-                      overview: "本台任务、到期提醒与项目交接，一眼掌握。",
-                      projects:
-                        "围绕销售流程，明确每一阶段的主责、协作、交接与下一步。",
-                      tasks:
-                        "销售或管理下发，承办台处理并反馈，管理验收；无需先创建项目。",
-                      filings:
-                        "按产品跟踪厂家判定与报备更新，避免遗漏关键保护环节。",
-                      guide: "把公司培训中的工作要点，放在每个项目阶段旁。",
-                      pipeline: "从线索到履约，一眼看清项目所处阶段。",
-                      products: "按品牌、专业与使用区域，找到适合项目的产品。",
-                      settings:
-                        "按公司组织分工协同，项目对接人和工作规则可持续调整。",
-                      meetings: "每周一会议纪要、周总任务与行动项落实。",
-                      finance:
-                        "合同审核、应收、收款与开票记录共享，敏感操作按岗位授权。",
-                      messages:
-                        "个人私聊、工作台沟通与项目群聊，交接说明和反馈集中查看。",
-                      members:
-                        "添加成员、分配工作台权限，跟踪首次姓名确认与账号激活。",
-                    } as Record<string, string>
-                  )[tab]
-                }
-              </p>
+              <p>{pageDescription(tab)}</p>
             </div>
             <div className="heading-actions">
-              {tab === "overview" &&
-                (isManager(viewMember) || viewMember.role === "sales") && (
-                  <button className="button" onClick={() => navigate("sales")}>
-                    <ClipboardCheck size={18} />
-                    销售考核
-                  </button>
-                )}
               {canDispatchTask(viewMember) &&
                 ["overview", "projects", "pipeline"].includes(tab) && (
                   <button
@@ -1686,18 +1946,7 @@ export default function Workspace({
                 </button>
               )}
               {canCreateProject(viewMember) &&
-                ![
-                  "tasks",
-                  "sales",
-                  "settings",
-                  "products",
-                  "guide",
-                  "filings",
-                  "finance",
-                  "members",
-                  "meetings",
-                  "messages",
-                ].includes(tab) && (
+                ["projects", "pipeline", "filings"].includes(tab) && (
                   <button className="button primary" onClick={newProject}>
                     <Plus size={18} />
                     新建项目
@@ -1729,104 +1978,217 @@ export default function Workspace({
             </div>
           ) : (
             <>
-              {!["overview", "messages", "members", "sales", "results"].includes(tab) && (
-                <div className="workspace-scope">
-                  <span>
-                    <Users size={15} />
-                    项目范围
-                  </span>
-                  <select
-                    aria-label="按所属分部筛选"
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                  >
-                    {["全部分部", "广州总部", "湖南分部", "待分配"].map((x) => (
-                      <option key={x}>{x}</option>
-                    ))}
-                  </select>
-                  <p>管理派单 · 售后 / 销售 / 财务 / 运营各司其职</p>
-                  {member.role === "owner" && (
-                    <button
-                      className="text-button"
-                      onClick={() => navigate("settings")}
-                    >
-                      查看组织分工
-                      <ArrowUpRight size={13} />
-                    </button>
-                  )}
-                </div>
-              )}
+              {["projects", "pipeline", "filings"].includes(tab) &&
+                projectArea(viewMember) && (
+                  <div className="workspace-scope">
+                    <span>
+                      <Users size={15} />
+                      公司全部项目
+                    </span>
+                    <p>
+                      {scopeProjects.length} 个项目 · {active.length} 个进行中 ·{" "}
+                      {overdue.length} 个跟进逾期
+                    </p>
+                    {member.role === "owner" && (
+                      <button
+                        className="text-button"
+                        onClick={() => navigate("settings")}
+                      >
+                        查看组织分工
+                        <ArrowUpRight size={13} />
+                      </button>
+                    )}
+                  </div>
+                )}
               {demo && (
                 <div className="demo-role-selector">
                   <span>体验岗位页面</span>
                   <select
                     aria-label="选择演示岗位"
-                    value={deskOf(portalRole)}
-                    onChange={(e) =>
-                      (window.location.href = "/demo?role=" + e.target.value)
-                    }
+                    value={demoIdentityValue}
+                    onChange={(e) => {
+                      const choice = demoIdentityChoices.find(
+                        (item) => item.value === e.target.value,
+                      );
+                      if (choice)
+                        window.location.href = demoHref(
+                          choice.portal,
+                          choice.scope,
+                        );
+                    }}
                   >
-                    {ROLES.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
+                    {demoIdentityChoices.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
                       </option>
                     ))}
                   </select>
                   <small>演示账号与真实成员完全分开。</small>
                 </div>
               )}
-              {tab === "overview" && isManager(viewMember) && !demo && <PauseReviewReminder request={workspaceFetch} projects={projects} open={()=>navigate("results")} />}
-              {tab === "results" && <ProjectResults member={viewMember} request={workspaceFetch} projects={projects} demo={demo} onOpen={p=>{setDetail(p.id);setDetailTab("状态与原因");}} />}
-              {tab === "overview" && canViewFinance(viewMember) && <CashDashboard member={viewMember} request={workspaceFetch} demo={demo} compact={viewMember.role!=="finance"} onOpen={id=>{setDetail(id);setDetailTab("项目收支");}}/>}
-              {tab === "cashflow" && canViewFinance(viewMember) && <CashDashboard member={viewMember} request={workspaceFetch} demo={demo} onOpen={id=>{setDetail(id);setDetailTab("项目收支");}}/>}
-              {tab === "reimbursements" && <MyReimbursements member={viewMember} request={workspaceFetch} demo={demo}/>}
-              {tab === "overview" && viewMember.role!=="finance" && (
-                <RoleDashboard
+              {tab === "results" && (
+                <ProjectResults
                   member={viewMember}
-                  projects={scopeProjects}
-                  tasks={visibleTasks}
-                  books={finances}
-                  config={config}
-                  linkages={homeLinkages.filter((l) =>
-                    scopeProjects.some((p) => p.id === l.projectId),
-                  )}
-                  onOpen={openProject}
-                  onFollowup={(p) => openForm(p, "followup")}
-                  onTask={(t) => {
-                    navigate("tasks");
-                    setTaskFocus(t.id);
+                  request={workspaceFetch}
+                  projects={projects}
+                  demo={demo}
+                  onOpen={(p) => {
+                    setDetail(p.id);
+                    setDetailTab("状态与原因");
                   }}
-                  onTasks={(d) => {
-                    navigate("tasks");
-                    if (d) setTaskDesk(d);
-                  }}
-                  onTab={navigate}
-                  onFinance={openFinance}
-                  onProjectFilter={goFilter}
                 />
               )}
-              {tab === "overview" && (
-                <details className="business-overview">
-                  <summary>
-                    {viewMember.role === "finance"
-                      ? "合同与票款业务"
-                      : "项目与经营概览"}
-                  </summary>
-                  <RoleHome
+              {tab === "cashflow" && canViewFinance(viewMember) && (
+                <CashDashboard
+                  member={viewMember}
+                  request={workspaceFetch}
+                  demo={demo}
+                  onOpen={(id) => {
+                    setDetail(id);
+                    setDetailTab("项目收支");
+                  }}
+                />
+              )}
+              {tab === "reimbursements" && (
+                <MyReimbursements
+                  member={viewMember}
+                  request={workspaceFetch}
+                  demo={demo}
+                />
+              )}
+              {/* 三个工作台各有一个清晰的主页，不再在概览下方重复展开岗位首页。 */}
+              {tab === "overview" && activePortal === "sales" && (
+                <>
+                  <HomeQuickLinks entries={salesQuickEntries} />
+                  <RoleDashboard
+                    member={viewMember}
+                    projects={scopeProjects}
+                    tasks={visibleTasks}
+                    books={finances}
+                    config={config}
+                    linkages={homeLinkages.filter((l) =>
+                      scopeProjects.some((p) => p.id === l.projectId),
+                    )}
+                    onOpen={openProject}
+                    onFollowup={(p) => openForm(p, "followup")}
+                    onTask={(t) => {
+                      navigate("tasks");
+                      setTaskFocus(t.id);
+                    }}
+                    onTasks={(d) => {
+                      navigate("tasks");
+                      if (d) setTaskDesk(d);
+                    }}
+                    onTab={navigate}
+                    onFinance={openFinance}
+                    onProjectFilter={goFilter}
+                  />
+                </>
+              )}
+              {tab === "overview" &&
+                activePortal === "management" &&
+                managementScopeOf(viewMember) === "management" &&
+                isManager(viewMember) && (
+                  <>
+                    <RoleHome
+                      member={viewMember}
+                      projects={scopeProjects}
+                      books={finances}
+                      config={config}
+                      onOpen={openProject}
+                      onFollowup={(p) => openForm(p, "followup")}
+                      onTab={(t, d) => {
+                        navigate(t);
+                        if (d) setDepartment(d);
+                      }}
+                    />
+                    {!demo && (
+                      <PauseReviewReminder
+                        request={workspaceFetch}
+                        projects={projects}
+                        open={() => navigate("results")}
+                      />
+                    )}
+                    <HomeQuickLinks entries={managerQuickEntries} />
+                    <RoleDashboard
+                      member={viewMember}
+                      projects={scopeProjects}
+                      tasks={visibleTasks}
+                      books={finances}
+                      config={config}
+                      linkages={homeLinkages.filter((l) =>
+                        scopeProjects.some((p) => p.id === l.projectId),
+                      )}
+                      onOpen={openProject}
+                      onFollowup={(p) => openForm(p, "followup")}
+                      onTask={(t) => {
+                        navigate("tasks");
+                        setTaskFocus(t.id);
+                      }}
+                      onTasks={(d) => {
+                        navigate("tasks");
+                        if (d) setTaskDesk(d);
+                      }}
+                      onTab={navigate}
+                      onFinance={openFinance}
+                      onProjectFilter={goFilter}
+                    />
+                  </>
+                )}
+              {tab === "overview" &&
+                activePortal === "management" &&
+                !(
+                  managementScopeOf(viewMember) === "management" &&
+                  isManager(viewMember)
+                ) && (
+                  <>
+                    <HomeQuickLinks entries={operationsQuickEntries} />
+                    <RoleDashboard
+                      member={viewMember}
+                      projects={scopeProjects}
+                      tasks={visibleTasks}
+                      books={finances}
+                      config={config}
+                      linkages={homeLinkages.filter((l) =>
+                        scopeProjects.some((p) => p.id === l.projectId),
+                      )}
+                      onOpen={openProject}
+                      onFollowup={(p) => openForm(p, "followup")}
+                      onTask={(t) => {
+                        navigate("tasks");
+                        setTaskFocus(t.id);
+                      }}
+                      onTasks={(d) => {
+                        navigate("tasks");
+                        if (d) setTaskDesk(d);
+                      }}
+                      onTab={navigate}
+                      onFinance={openFinance}
+                      onProjectFilter={goFilter}
+                      projectAccess={false}
+                    />
+                  </>
+                )}
+              {tab === "overview" && activePortal === "finance" && (
+                <>
+                  <FinanceCenter
                     member={viewMember}
                     projects={scopeProjects}
                     books={finances}
-                    config={config}
-                    onOpen={openProject}
-                    onFinance={openFinance}
-                    onTab={(t, d) => {
-                      navigate(t);
-                      if (d) setDepartment(d);
-                    }}
-                    onTask={openProject}
-                    onFollowup={(p) => openForm(p, "followup")}
+                    onOpen={openFinance}
                   />
-                </details>
+                  <CashDashboard
+                    member={viewMember}
+                    request={workspaceFetch}
+                    demo={demo}
+                    compact
+                    onOpen={(id) => {
+                      setDetail(id);
+                      setDetailTab("项目收支");
+                    }}
+                  />
+                  <HomeQuickLinks entries={financeQuickEntries} />
+                </>
               )}
               <div hidden={tab !== "messages"}>
                 <MessageCenter

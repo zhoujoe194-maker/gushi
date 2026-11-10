@@ -129,8 +129,8 @@ check(
 );
 check(
   (await request('hn', '/api/sales?month=2026-09&memberId=' + users.sales.id))
-    .status === 404,
-  '分部管理不能读取其他分部考核',
+    .status === 200,
+  'V2 公司管理可读取公司范围考核记录',
 );
 check(
   (
@@ -858,16 +858,11 @@ check(
     (await get('sales2')).evidence.weeklySubmitted === 0,
   '人工报告应交三份不覆盖系统整月周报统计',
 );
-await denied(
-  'hn',
-  {
-    action: 'review',
-    id: monthlyReport.id,
-    version: monthlyReport.version,
-    note: '越界审核',
-  },
-  404,
-  '月报沿用分部审核范围',
+check(
+  (await get('hn', '2026-09', users.sales2.id)).records.some(
+    (r) => r.id === monthlyReport.id && r.kind === 'monthly',
+  ),
+  'V2 公司管理可读取公司范围月报（分部不再是审核边界）',
 );
 await denied(
   'sales',

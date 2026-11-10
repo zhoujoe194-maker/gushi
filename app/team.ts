@@ -1,6 +1,9 @@
 import { GUIDES } from "./workflow";
 import type { Project } from "./model";
 import { workflowOf, DepartmentId, departmentDesk } from "./workflow";
+// D1: DESK_IDS remains the granular authorization scope used by projects,
+// tasks, meetings, messages and department assignments. It is NOT the entry
+// list any more. The three user-facing workbenches are PORTAL_IDS below.
 export const DESK_IDS = [
   "aftersales",
   "sales",
@@ -9,7 +12,57 @@ export const DESK_IDS = [
   "operations",
 ] as const;
 export type Desk = (typeof DESK_IDS)[number];
-// Legacy identities retain their original scope; all enter one of the five desks.
+// D1 workbench entrances. Sales and finance stay their own workbench;
+// management, operations and aftersales collaborate inside the management
+// workbench while keeping their own desk identity and permissions.
+export const PORTAL_IDS = ["sales", "management", "finance"] as const;
+export type Portal = (typeof PORTAL_IDS)[number];
+export const PORTAL_OF_DESK: Record<Desk, Portal> = {
+  sales: "sales",
+  finance: "finance",
+  management: "management",
+  operations: "management",
+  aftersales: "management",
+};
+export const portalOfDesk = (d: Desk): Portal => PORTAL_OF_DESK[d];
+export const portalOfRole = (r: Role): Portal => PORTAL_OF_DESK[deskOf(r)];
+// Display order inside the management workbench: manager scope first.
+export const SCOPES_IN_PORTAL: Record<Portal, Desk[]> = {
+  sales: ["sales"],
+  finance: ["finance"],
+  management: ["management", "operations", "aftersales"],
+};
+export const PORTALS: {
+  id: Portal;
+  name: string;
+  short: string;
+  description: string;
+  scopes: string;
+}[] = [
+  {
+    id: "sales",
+    name: "销售工作台",
+    short: "销售",
+    description: "项目创建、快速跟进、商务报价、客户回款与个人结果",
+    scopes: "销售",
+  },
+  {
+    id: "management",
+    name: "管理工作台",
+    short: "管理",
+    description: "公司经营、员工结果、项目管理、任务分配与暂停复查；运营、售后在此协作",
+    scopes: "管理 · 运营 · 售后",
+  },
+  {
+    id: "finance",
+    name: "财务工作台",
+    short: "财务",
+    description: "合同审核、项目收支、应收应付、工资费用、现金流与银行核销",
+    scopes: "财务",
+  },
+];
+export const portalInfo = (p: Portal) => PORTALS.find((x) => x.id === p)!;
+// Legacy identities retain their original scope; all enter one of the three workbenches.
 export const ROLE_IDS = [
   "owner",
   "management",
@@ -105,6 +158,10 @@ export type Member = {
   defaultDesk?: Desk;
   accountRole?: Role;
   profileCompleted?: boolean;
+  // D1 runtime context (set by access.inPortal; never persisted):
+  portal?: Portal;
+  scope?: Desk;
+  scopes?: Desk[];
   id: string;
   name: string;
   email: string;

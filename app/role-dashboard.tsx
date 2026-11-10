@@ -1,6 +1,5 @@
 'use client';
 import {
-  AlertTriangle,
   ArrowRight,
   Bell,
   BriefcaseBusiness,
@@ -16,7 +15,7 @@ import { Member, ROLES, Desk, deskOf, isManager } from './team';
 import { Project, Config, today, shiftDate, isActive, risk } from './model';
 import { FinanceBook, totals, money, emptyBook } from './finance-model';
 import { DeskTask, taskOverdue } from './task-model';
-import { filingAlerts, workflowOf } from './workflow';
+import { filingAlerts } from './workflow';
 import { Linkage } from './dashboard-model';
 type Props = {
   member: Member;
@@ -32,6 +31,9 @@ type Props = {
   onTab: (tab: string) => void;
   onFinance: (p: Project) => void;
   onProjectFilter: (filter: string) => void;
+  // D1: operations/aftersales identities inside the management workbench have
+  // no project or finance data access, so those surfaces must not be shown.
+  projectAccess?: boolean;
 };
 const Badge = ({
   children,
@@ -55,19 +57,19 @@ const labels: Record<
     description: '优先核验销售提交的合同、到期应收和待开票申请。',
   },
   operations: {
-    eyebrow: 'OPERATIONS DESK',
+    eyebrow: 'OPERATIONS SCOPE',
     headline: '把交接事项落实到位',
-    description: '技术与市场支持、厂家报备、采购物流，统一在运营台落实。',
+    description: '技术与市场支持、采购物流等运营事项在管理工作台的运营岗落实，结果同步管理。',
   },
   aftersales: {
-    eyebrow: 'AFTER-SALES DESK',
+    eyebrow: 'AFTER-SALES SCOPE',
     headline: '及时响应，妥善解决',
-    description: '跟进售后问题、验收回访和遗留事项，处理结果同步管理。',
+    description: '跟进售后问题、验收回访和遗留事项，在管理工作台的售后岗处理，结果同步管理。',
   },
   management: {
-    eyebrow: 'MANAGEMENT DESK',
+    eyebrow: 'MANAGEMENT WORKBENCH',
     headline: '掌握全局，推动执行',
-    description: '统筹五个台的任务期限、处理进展、项目风险与结果验收。',
+    description: '统筹销售、管理、财务三个工作台的任务期限、处理进展、项目风险与结果验收；运营与售后在管理工作台内协作。',
   },
 };
 export default function RoleDashboard(p: Props) {
@@ -85,6 +87,7 @@ export default function RoleDashboard(p: Props) {
     onTab,
     onFinance,
     onProjectFilter,
+    projectAccess = true,
   } = p;
   const desk = deskOf(member.role),
     manager = isManager(member),
@@ -245,10 +248,10 @@ export default function RoleDashboard(p: Props) {
               ]
             : [
                 {
-                  label: '各台未完成任务',
+                  label: '各工作台未完成任务',
                   value: pending.length,
                   unit: '项',
-                  hint: '按授权分部汇总',
+                  hint: '公司全部工作台与岗位的待办',
                   action: () => onTasks(),
                 },
                 {
@@ -277,6 +280,11 @@ export default function RoleDashboard(p: Props) {
                   action: () => onProjectFilter('跟进逾期'),
                 },
               ];
+  // Operations/aftersales can never read projects, so the filing metric would
+  // be a dead link for them; keep only the metrics they can actually act on.
+  const visibleMetrics = projectAccess
+    ? metrics
+    : metrics.filter((m) => !m.label.startsWith('厂家报备'));
   const reminders: {
     title: string;
     detail: string;
@@ -306,7 +314,7 @@ export default function RoleDashboard(p: Props) {
         action: () => onFinance(x.project),
         tone: 'blue',
       });
-  if (desk === 'operations' && filings.length)
+  if (desk === 'operations' && projectAccess && filings.length)
     reminders.push({
       title: `${filings.length} 项厂家报备需要关注`,
       detail: '查看首次报备、判定反馈及每月更新提醒',
@@ -370,7 +378,7 @@ export default function RoleDashboard(p: Props) {
         </div>
       </section>
       <div className="dashboard-metrics">
-        {metrics.map((m, i) => (
+        {visibleMetrics.map((m, i) => (
           <button
             key={m.label}
             onClick={m.action}
@@ -403,7 +411,7 @@ export default function RoleDashboard(p: Props) {
             return (
               <button key={r.id} onClick={() => onTasks(r.id as Desk)}>
                 <span className={'desk-dot desk-' + r.id} />
-                <strong>{r.name}台</strong>
+                <strong>{r.name}岗</strong>
                 <b>
                   {ts.length}
                   <small>待办</small>
@@ -560,10 +568,11 @@ export default function RoleDashboard(p: Props) {
           )}
         </section>
       </div>
+      {projectAccess && (
       <section className="panel dashboard-linkages">
         <div className="section-heading">
           <div>
-            <h2>与其他台的协作进度</h2>
+            <h2>与其他工作台的协作进度</h2>
             <p>按关联项目查看交接状态；部分工作可同时推进。</p>
           </div>
           <button className="text-button" onClick={() => onTab('projects')}>
@@ -594,7 +603,7 @@ export default function RoleDashboard(p: Props) {
                   <span>
                     <i>{i + 1}</i>
                     {s.label}
-                    {s.desk === desk && <em>本台</em>}
+                    {s.desk === desk && <em>本岗</em>}
                   </span>
                   <Badge tone={s.tone}>{s.state}</Badge>
                 </div>
@@ -607,11 +616,12 @@ export default function RoleDashboard(p: Props) {
             <LayoutDashboard size={25} />
             <strong>关联项目后，协作进度会出现在这里</strong>
             <p>
-              销售或管理派发项目任务后，承办台可查看项目背景与相关岗位的交接状态。
+              销售或管理派发项目任务后，承办岗位可查看项目背景与相关岗位的交接状态。
             </p>
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

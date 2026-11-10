@@ -146,9 +146,9 @@ const denied = async (key, body, files, status, label, desk) =>
     label,
   );
 await denied(null, feedback(), [png], 401, '未登录不能上传');
-await denied('ops2', feedback(), [png], 403, '非指定承办人不能上传');
+await denied('ops2', feedback(), [png], 404, '同台非承办人不能上传（V2 inTaskScope 边界）');
 await denied('sales', feedback(), [png], 403, '销售下发人不能代替承办台上传');
-await denied('hn', feedback(), [png], 404, '分部外不能上传');
+await denied('dual', feedback(), [png], 404, '非承办岗位不能上传');
 await denied('outside', feedback(), [png], 404, '跨公司不能上传');
 check(
   (
@@ -228,10 +228,14 @@ check(
 );
 check((await request('sales', url)).status === 200, '下发人可查看任务图片');
 check(
-  (await request('ops2', url)).status === 200,
-  '承办台内查看规则与原任务一致',
+  (await request('ops2', url)).status === 404,
+  '同台非承办人不能查看任务图片（V2 边界）',
 );
-for (const key of ['finance', 'hn', 'outside'])
+check(
+  (await request('hn', url)).status === 200,
+  '管理岗位可查看任务图片（V2 公司范围）',
+);
+for (const key of ['finance', 'outside'])
   check((await request(key, url)).status === 404, key + '不能越权读取图片');
 check((await request(null, url)).status === 401, '未登录不能读取图片');
 check(
@@ -239,8 +243,8 @@ check(
   '兼岗默认财务台不可读取运营任务图片',
 );
 check(
-  (await request('dual', url + '?desk=operations')).status === 200,
-  '兼岗在授权运营台可读图片',
+  (await request('dual', url + '?desk=operations')).status === 404,
+  '兼岗但非承办人不能查看任务图片（V2 边界）',
 );
 check(
   (await request('finance', url + '?desk=operations')).status === 403,

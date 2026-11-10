@@ -121,12 +121,12 @@ export default function TaskCenter({
               ? '任务派发与督办'
               : dispatcher
                 ? '任务下发与跟进'
-                : deskName(deskOf(member.role)) + '任务'}
+                : '本台任务'}
           </h2>
           <p>
             {dispatcher
               ? '可独立下发日常任务，也可关联项目；明确承办人和期限，跟踪反馈。'
-              : '这里只显示发给本台的任务；处理完成后提交管理验收。'}
+              : '这里只显示发给本台岗位的任务；处理完成后提交管理工作台验收。'}
           </p>
         </div>
         {dispatcher && (
@@ -193,14 +193,14 @@ export default function TaskCenter({
           )}
           {dispatcher && (
             <select
-              aria-label="按工作台筛选任务"
+              aria-label="按承办岗位筛选任务"
               value={desk}
               onChange={(e) => setDesk(e.target.value)}
             >
-              <option value="全部">全部工作台</option>
+              <option value="全部">全部岗位</option>
               {ROLES.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name}台
+                  {r.name}岗
                 </option>
               ))}
             </select>
@@ -232,7 +232,7 @@ export default function TaskCenter({
               <span className="dispatch-content">
                 <strong>{t.title}</strong>
                 <span>
-                  {deskName(t.desk)}台 · {t.assigneeName || '本台待认领'}
+                  {deskName(t.desk)}岗 · {t.assigneeName || '本台待认领'}
                   {' · ' + (t.projectName || '独立任务')}
                   {t.createdBy === member.id ? ' · 我下发的' : ''}
                 </span>
@@ -303,7 +303,7 @@ export default function TaskCenter({
         >
           <div className="task-detail">
             <span className="badge green">
-              {deskName(current.desk)}台 · {current.status}
+              {deskName(current.desk)}岗 · {current.status}
             </span>
             <h3>{current.title}</h3>
             <div className="task-metadata">
@@ -515,11 +515,11 @@ function Feedback({
         </div>
       )}
       {!closed && !manager && task.status === '待验收' && (
-        <p className="helper-text">结果已提交，等待管理台验收。</p>
+        <p className="helper-text">结果已提交，等待管理工作台验收。</p>
       )}
       {!closed && !manager && !canHandleTask(task, member) && (
         <p className="helper-text">
-          由 {task.assigneeName || '承办台成员'} 负责处理，可在这里跟踪进展。
+          由 {task.assigneeName || '承办岗位成员'} 负责处理，可在这里跟踪进展。
         </p>
       )}
     </>
@@ -582,7 +582,7 @@ export function TaskEditor({
         </label>
         <div className="form-grid">
           <label className="field">
-            承办工作台
+            承办岗位
             <select
               value={draft.desk}
               onChange={(e) =>
@@ -595,7 +595,7 @@ export function TaskEditor({
             >
               {ROLES.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name}台
+                  {r.name}岗
                 </option>
               ))}
             </select>
@@ -697,7 +697,7 @@ export function TaskEditor({
           />
         </label>
         <p className="helper-text">
-          截止日期由你设定。下发人、承办台及管理台可跟踪任务；承办人提交结果后，由管理台验收。
+          截止日期由你设定。下发人、承办岗位及管理工作台可跟踪任务；承办人提交结果后，由管理工作台验收。
         </p>
         <div className="form-actions">
           <button

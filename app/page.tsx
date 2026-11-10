@@ -18,7 +18,7 @@ export default async function Home() {
   let error: string | undefined;
   try {
     const ctx = await pageContext(true);
-    session = { member: ctx.member, isOwner: ctx.member.role === 'owner' };
+    session = { member: ctx.member, isOwner: (ctx.member.accountRole || ctx.member.role) === 'owner' };
   } catch (e) {
     error = e instanceof HttpError && e.status !== 401 ? e.message : undefined;
   }

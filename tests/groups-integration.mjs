@@ -144,9 +144,12 @@ check(
   '销售不能用不可见的项目建群',
 );
 check(
-  (await req('branch', { ...creation, memberIds: ids('branch', 'finance') }))
-    .status === 404,
-  '分部管理不能跨项目权限建群',
+  (await req('branch', {
+    ...creation,
+    clientId: randomUUID(),
+    memberIds: ids('branch', 'finance'),
+  })).status === 200,
+  'V2 公司管理可在公司项目内建群',
 );
 check(
   (await req('sales', { ...creation, memberIds: ids('sales', 'external') }))
@@ -232,13 +235,11 @@ for (const outsider of ['owner', 'branch', 'external']) {
     '非成员 ' + outsider + ' 不能标记群已读',
   );
 }
-const opsGroup = (await ok('ops')).threads.find((t) => t.id === threadId);
 check(
-  opsGroup &&
-    opsGroup.group.projectId === 'restricted' &&
-    !opsGroup.group.projectName &&
-    !opsGroup.group.canManage,
-  '入群不扩大项目资料权限',
+  !(await ok('ops')).threads.some((t) => t.id === threadId) &&
+    (await req('ops', undefined, '/api/messages?threadId=' + threadId))
+      .status === 404,
+  '入群不扩大项目资料权限（V2 边界：无权项目群不可见不可读）',
 );
 check(
   (await req('ops', undefined, '/api/workspace')).data.projects.every(
@@ -247,31 +248,29 @@ check(
   '入群后项目主档权限保持原状',
 );
 check(
-  (await ok('multi', undefined, '/api/messages', 'operations')).threads.some(
-    (t) => t.id === threadId,
-  ),
-  '兼岗成员切换工作台仍能看到本人群聊',
+  !(await ok('multi')).threads.some((t) => t.id === threadId),
+  '群聊可见性仍受项目主档权限限制（V2 边界）',
 );
 const sendInput = {
   action: 'send',
   threadId,
-  fromKey: key('ops'),
-  body: '运营已加入，开始核对交期',
+  fromKey: key('finance'),
+  body: '财务已加入，开始核对交期',
   clientId: randomUUID(),
 };
-const sent = await ok('ops', sendInput);
-check(sent.message.actorId === users.ops.id, '群成员可用本人身份发言');
+const sent = await ok('finance', sendInput);
+check(sent.message.actorId === users.finance.id, '群成员可用本人身份发言');
 check(
-  (await ok('ops', sendInput)).message.seq === sent.message.seq,
+  (await ok('finance', sendInput)).message.seq === sent.message.seq,
   '群消息网络重试保持幂等',
 );
 check(
-  (await req('ops', { ...sendInput, body: '另一个内容' })).status === 409,
+  (await req('finance', { ...sendInput, body: '另一个内容' })).status === 409,
   '群消息标识冲突被拒绝',
 );
 check(
   (
-    await req('ops', {
+    await req('finance', {
       ...sendInput,
       clientId: randomUUID(),
       fromKey: 'desk:operations',
@@ -291,16 +290,19 @@ check(
 );
 check(
   (
-    await req('ops', {
-      ...sendInput,
-      clientId: randomUUID(),
+    await req('sales2', {
+      action: 'send',
+      threadId,
+      fromKey: key('sales2'),
+      body: '越权关联项目消息',
       projectId: project.id,
+      clientId: randomUUID(),
     })
   ).status === 404,
-  '群成员不能附加无权查看的项目',
+  '无权查看项目的群成员不能附加项目（V2 边界）',
 );
 check(
-  (await ok('finance')).threads.find((t) => t.id === threadId).unread === 2,
+  (await ok('finance')).threads.find((t) => t.id === threadId).unread === 1,
   '每人分别累计群消息未读',
 );
 await ok('finance', { action: 'read', threadId, upTo: sent.message.seq });
@@ -318,8 +320,8 @@ const update = {
 };
 check((await req('finance', update)).status === 403, '普通群成员不能修改成员');
 check(
-  (await req('sales2', update)).status === 403,
-  '普通销售群成员不能管理他人创建的群',
+  (await req('sales2', update)).status === 404,
+  '无权项目成员不能管理项目群（V2 边界）',
 );
 check((await req('owner', update)).status === 404, '未入群管理员不能修改群');
 check(
@@ -343,7 +345,15 @@ check(
   '移出后无法读取历史',
 );
 check(
-  (await req('ops', { ...sendInput, clientId: randomUUID() })).status === 404,
+  (
+    await req('ops', {
+      action: 'send',
+      threadId,
+      fromKey: key('ops'),
+      body: '移出后尝试发言',
+      clientId: randomUUID(),
+    })
+  ).status === 404,
   '移出后无法继续发言',
 );
 check(
@@ -358,14 +368,19 @@ check(
 await ok('sales', {
   ...update,
   name: '交付协作群',
-  memberIds: ids('sales', 'finance', 'manager', 'multi', 'sales2', 'ops'),
+  memberIds: ids('sales', 'finance', 'manager', 'multi', 'sales2', 'branch'),
   version: 2,
 });
 check(
   (
-    await ok('ops', undefined, '/api/messages?threadId=' + threadId)
+    await ok('branch', undefined, '/api/messages?threadId=' + threadId)
   ).messages.some((m) => m.id === sent.message.id),
-  '重新入群可以看到此前历史',
+  '新加入且有项目权限的成员可以看到此前历史',
+);
+check(
+  (await req('ops', undefined, '/api/messages?threadId=' + threadId))
+    .status === 404,
+  '无项目权限的成员即使被加入群也不能读取历史（V2 边界）',
 );
 const races = await Promise.all([
   req('sales', { ...update, name: '并发A', version: 3 }),

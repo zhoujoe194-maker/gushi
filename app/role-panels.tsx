@@ -2,42 +2,16 @@
 import { FinanceOperationsQueue } from "./finance-operations-panel";
 import React, { useState, useRef, useId } from "react";
 import { useModalFocus } from "./use-modal-focus";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  BriefcaseBusiness,
-  CalendarDays,
-  Check,
-  ChevronRight,
-  ClipboardCheck,
-  Clock3,
-  FileCheck2,
-  FileText,
-  Plus,
-  ShieldCheck,
-  Users,
-  Wallet,
-  X,
-  BookOpen,
-  TriangleAlert,
-  Bell,
-} from "lucide-react";
+import { Plus, ShieldCheck, Wallet, X } from "lucide-react";
 import {
   Member,
-  Role,
-  ROLES,
   roleInfo,
   canFinance,
   canEditProject,
-  isManager,
-  canViewFinance,
-  canCreateProject,
-  deskOf,
-  taskVisible,
 } from "./team";
-import { Project, today, isActive, risk, Config } from "./model";
+import { Project, today, Config } from "./model";
 import { WorkflowOverview } from "./workflow-panels";
-import { workflowOf, filingAlerts, departmentName } from "./workflow";
+
 import {
   FinanceBook,
   PaymentPlan,
@@ -58,248 +32,49 @@ const Badge = ({
   children: React.ReactNode;
   tone?: string;
 }) => <span className={"badge " + tone}>{children}</span>;
+// D1: the management workbench keeps one company-level overview for the
+// manager scope. Sales, operations and aftersales role dashboards live inside
+// the same workbench, so this component only renders RoleHome for managers.
 export function RoleHome({
   member,
   projects,
   books,
   config,
   onOpen,
-  onFinance,
-  onTab,
-  onTask,
   onFollowup,
+  onTab,
 }: {
   member: Member;
   projects: Project[];
   books: Record<string, FinanceBook>;
   config: Config;
   onOpen: (p: Project) => void;
-  onFinance: (p: Project) => void;
-  onTab: (tab: string, department?: string) => void;
-  onTask: (p: Project) => void;
   onFollowup: (p: Project) => void;
+  onTab: (tab: string, department?: string) => void;
 }) {
-  if (isManager(member))
-    return (
-      <>
-        <div className="role-welcome">
-          <span>
-            <ShieldCheck size={15} />
-            {roleInfo(member.role).name}
-          </span>
-          <p>
-            {member.role === "branch_manager"
-              ? member.region + " · 仅显示授权分部项目"
-              : "公司项目、部门进度与经营风险"}
-          </p>
-        </div>
-        <WorkflowOverview
-          projects={projects}
-          config={config}
-          onOpen={onOpen}
-          onFollowup={onFollowup}
-          onDepartment={(d) => onTab("tasks", d)}
-          onFilings={() => onTab("filings")}
-          onProjects={() => onTab("projects")}
-        />
-        <FinanceSummary
-          projects={projects}
-          books={books}
-          onOpen={() => onTab("finance")}
-        />
-      </>
-    );
-  if (member.role === "finance")
-    return (
-      <FinanceCenter
-        member={member}
-        projects={projects}
-        books={books}
-        onOpen={onFinance}
-      />
-    );
-  const tasks = projects.flatMap((p) =>
-    workflowOf(p)
-      .tasks.filter(
-        (t) => taskVisible(t.department, member) && t.status !== "已完成",
-      )
-      .map((task) => ({ project: p, task })),
-  );
-  const active = projects.filter(isActive),
-    todayProjects = active.filter((p) => p.nextDate === today()),
-    alerts = filingAlerts(projects);
   return (
     <>
       <div className="role-welcome">
         <span>
-          <Users size={15} />
-          {member.name} · {roleInfo(member.role).name}
+          <ShieldCheck size={15} />
+          公司经营概览
         </span>
-        <p>
-          {member.role === "sales"
-            ? "专注本人负责的机会、客户和下一步行动"
-            : "查看分配给本岗位的项目与协作，处理结果同步项目主跟。"}
-        </p>
+        <p>{roleInfo(member.role).name} · 公司项目、部门进度与经营风险</p>
       </div>
-      <div className="workflow-stats">
-        <button onClick={() => onTab("projects")}>
-          <span>
-            {member.role === "sales" ? "我的项目" : "参与项目"}
-            <BriefcaseBusiness size={18} />
-          </span>
-          <strong>
-            {projects.length}
-            <small>个</small>
-          </strong>
-          <p>按账号分配，服务端控制可见范围</p>
-        </button>
-        <button onClick={() => onTab("tasks")}>
-          <span>
-            {member.role === "sales" ? "历史销售协作" : "历史项目协作"}
-            <ClipboardCheck size={18} />
-          </span>
-          <strong>
-            {tasks.length}
-            <small>项</small>
-          </strong>
-          <p>{tasks.filter((x) => x.task.dueDate < today()).length} 项已逾期</p>
-        </button>
-        <button
-          onClick={() => onTab(member.role === "sales" ? "projects" : "tasks")}
-        >
-          <span>
-            {member.role === "sales" ? "今日跟进" : "待反馈事项"}
-            <Clock3 size={18} />
-          </span>
-          <strong>
-            {member.role === "sales"
-              ? todayProjects.length
-              : tasks.filter((x) => x.task.status === "待反馈").length}
-            <small>项</small>
-          </strong>
-          <p>办理结果回到同一个项目</p>
-        </button>
-        <button onClick={() => onTab("filings")}>
-          <span>
-            报备关注
-            <FileCheck2 size={18} />
-          </span>
-          <strong>
-            {alerts.length}
-            <small>项</small>
-          </strong>
-          <p>相关项目的厂家报备与更新</p>
-        </button>
-      </div>
-      <div className="management-grid">
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <h2>
-                {member.role === "sales"
-                  ? "今日及逾期跟进"
-                  : "我需要处理的事项"}
-              </h2>
-              <p>点击进入项目，查看背景和具体要求。</p>
-            </div>
-          </div>
-          {member.role === "sales"
-            ? active
-                .filter((p) => p.nextDate <= today())
-                .map((p) => (
-                  <div className="role-project-line" key={p.id}>
-                    <div>
-                      <button
-                        className="project-link"
-                        onClick={() => onOpen(p)}
-                      >
-                        {p.name}
-                      </button>
-                      <p>{p.nextAction || "待安排下一步"}</p>
-                    </div>
-                    <Badge tone={risk(p, config.staleDays).tone}>
-                      {p.nextDate}
-                    </Badge>
-                    <button
-                      className="button small-button"
-                      onClick={() => onFollowup(p)}
-                    >
-                      记录跟进
-                    </button>
-                  </div>
-                ))
-            : tasks.map(({ project: p, task: t }) => (
-                <div className="role-project-line" key={t.id}>
-                  <div>
-                    <button className="project-link" onClick={() => onTask(p)}>
-                      {t.title}
-                    </button>
-                    <p>
-                      {p.name} · 期限 {t.dueDate}
-                    </p>
-                  </div>
-                  <Badge tone={t.dueDate < today() ? "red" : "blue"}>
-                    {t.status}
-                  </Badge>
-                </div>
-              ))}
-          {!(member.role === "sales"
-            ? active.some((p) => p.nextDate <= today())
-            : tasks.length) && (
-            <div className="small-empty">目前没有需要立即处理的事项。</div>
-          )}
-        </section>
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <h2>项目与协作进展</h2>
-              <p>共享项目上下文，按岗位维护工作结果。</p>
-            </div>
-          </div>
-          {projects.slice(0, 5).map((p) => (
-            <button
-              className="handoff-line"
-              key={p.id}
-              onClick={() => onOpen(p)}
-            >
-              <span>
-                <strong>{p.name}</strong>
-                <small>
-                  {p.stage} · 主跟 {p.owner} · {workflowOf(p).region}
-                </small>
-              </span>
-              <ChevronRight size={15} />
-            </button>
-          ))}
-          {!projects.length && (
-            <div className="small-empty">
-              尚未分配项目。
-              {member.role === "sales"
-                ? "可新建本人项目，或由管理人员分配。"
-                : "由项目主跟或管理人员分配项目或协作事项后显示。"}
-            </div>
-          )}
-        </section>
-      </div>
-      {member.role === "sales" && (
-        <FinanceSummary
-          projects={projects}
-          books={books}
-          onOpen={() => onTab("finance")}
-        />
-      )}
-      <div className="role-shortcuts">
-        <button onClick={() => onTab("guide")}>
-          <BookOpen size={17} />
-          查看本岗位跟进指南
-          <ArrowRight size={14} />
-        </button>
-        <button onClick={() => onTab("tasks")}>
-          <ClipboardCheck size={17} />
-          查看本台任务
-          <ArrowRight size={14} />
-        </button>
-      </div>
+      <WorkflowOverview
+        projects={projects}
+        config={config}
+        onOpen={onOpen}
+        onFollowup={onFollowup}
+        onDepartment={(d) => onTab("tasks", d)}
+        onFilings={() => onTab("filings")}
+        onProjects={() => onTab("projects")}
+      />
+      <FinanceSummary
+        projects={projects}
+        books={books}
+        onOpen={() => onTab("finance")}
+      />
     </>
   );
 }

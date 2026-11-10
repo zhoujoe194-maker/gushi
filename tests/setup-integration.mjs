@@ -271,8 +271,12 @@ await scenario('concurrent', {}, async (db) => {
   );
   const session = await request(undefined, result.cookie, '/api/session');
   check(
-    session.status === 200 && session.body.member.assignedDesks.length === 5,
-    '启用会话直接获得五台权限',
+    session.status === 200 &&
+      session.body.member.assignedDesks.length === 5 &&
+      ['sales', 'management', 'finance', 'operations', 'aftersales'].every(
+        (desk) => session.body.member.assignedDesks.includes(desk),
+      ),
+    '启用会话直接获得五个岗位授权（对应三个工作台）',
   );
   check(
     (await request(undefined, result.cookie, '/api/workspace')).status === 200,

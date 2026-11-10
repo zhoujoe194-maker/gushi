@@ -1,5 +1,5 @@
 import Entry from '../../entry';
-import { Role, ROLE_IDS, deskOf } from '../../team';
+import { PORTAL_IDS, Portal, ROLE_IDS, Role, portalOfRole } from '../../team';
 import { notFound } from 'next/navigation';
 export default async function Login({
   params,
@@ -7,6 +7,13 @@ export default async function Login({
   params: Promise<{ role: string }>;
 }) {
   const { role } = await params;
-  if (!ROLE_IDS.includes(role as Role)) notFound();
-  return <Entry role={deskOf(role as Role)} />;
+  // D1: login links accept a workbench id; legacy role ids still land on the
+  // same login page (the workbench is resolved after login).
+  const portal = (PORTAL_IDS as readonly string[]).includes(role)
+    ? (role as Portal)
+    : ROLE_IDS.includes(role as Role)
+      ? portalOfRole(role as Role)
+      : null;
+  if (!portal) notFound();
+  return <Entry />;
 }

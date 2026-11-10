@@ -93,3 +93,6 @@
 /* A previous success message must not cover a new dialog's submit buttons. */
 body:has(.modal-backdrop) .toast {display:none;}
 .toast {pointer-events:none;}
+
+/* Shared project cash cards and mobile financial forms */
+.cash-panel{display:grid;gap:var(--space-4,16px)}.cash-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}.cash-figures{display:flex;gap:16px;flex-wrap:wrap;font-variant-numeric:tabular-nums}.cash-figures dd{margin:0;font-weight:600}.cash-form{display:grid;gap:16px;max-width:640px;margin-top:16px}.cash-form input,.cash-form select,.cash-form button{min-height:44px}.cash-warning{border-left:3px solid currentColor;padding:12px;background:var(--bg)}.cash-panel details{overflow-wrap:anywhere}.cash-panel .finance-block{min-width:0}@media(max-width:600px){.cash-form input,.cash-form select,.cash-form textarea{font-size:16px;max-width:100%}.cash-figures{gap:12px}.cash-panel .finance-block{padding:16px}}

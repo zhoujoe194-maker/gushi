@@ -1,4 +1,5 @@
 "use client";
+import {ProjectCash} from './cash-panels';
 import { ProjectOutcomes, ProjectResults, PauseReviewReminder } from './outcome-panels';
 import { statusOf, BUSINESS_STATUSES } from './outcome-model';
 import { ProjectBusiness } from "./project-business";
@@ -2430,7 +2431,7 @@ export default function Workspace({
                 "状态与原因",
                 "阶段推进",
                 "产品机会",
-                ...(mayViewBook(selected,viewMember) ? ["合同与票款"] : []),
+                ...(mayViewBook(selected,viewMember) ? ["项目收支", "合同与票款"] : []),
                 "商务与交付",
                 "项目信息",
               ].map((t) => (
@@ -2458,6 +2459,7 @@ export default function Workspace({
                 (detailTab === "阶段推进" ? "workflow-detail-content" : "")
               }
             >
+              {detailTab === "项目收支" && <ProjectCash projectId={selected.id} member={viewMember} request={workspaceFetch} demo={demo} />}
               {detailTab === "状态与原因" && <ProjectOutcomes project={selected} member={viewMember} request={workspaceFetch} demo={demo} onChanged={(p,e)=>{setProjects(ps=>ps.map(x=>x.id===p.id?p:x));setEvents(es=>[e,...es]);setNotice("状态与原因已保存");}} />}
               {detailTab === "阶段推进" && (
                 <StageWorkspace

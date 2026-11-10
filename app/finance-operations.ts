@@ -24,6 +24,7 @@ export type CollectionTask = {
   history: { at: string; actor: string; note: string }[];
 };
 export type SupplierPayable = {
+  cashTerms?:import("./cash-model").CashTerms;certainty?:import("./cash-model").Certainty;history?:import("./cash-model").Audit[];
   id: string;
   supplier: string;
   batchId: string;
@@ -36,6 +37,7 @@ export type SupplierPayable = {
   voidAt?: string;
   voidReason?: string;
   payments: {
+    bankId?:string;
     id: string;
     date: string;
     amountCents: number;

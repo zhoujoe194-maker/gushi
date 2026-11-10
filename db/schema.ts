@@ -90,3 +90,9 @@ export const projectManagementReviews = sqliteTable('project_management_reviews'
  next_review_date: text('next_review_date'),
  created_at: text('created_at').notNull()
 });
+
+export const financeMutations=sqliteTable('finance_mutations',{id:text('id').notNull(),workspaceId:text('workspace_id').notNull(),actorId:text('actor_id').notNull(),requestHash:text('request_hash').notNull(),data:text('data').notNull(),createdAt:text('created_at').notNull()},t=>[primaryKey({columns:[t.workspaceId,t.id]})]);
+export const bankTransactions=sqliteTable('bank_transactions',{id:text('id').primaryKey(),workspaceId:text('workspace_id').notNull(),reference:text('reference').notNull(),data:text('data').notNull(),version:integer('version').notNull().default(1)},t=>[uniqueIndex('bank_transactions_reference').on(t.workspaceId,t.reference)]);
+export const financeCompany=sqliteTable('finance_company',{workspaceId:text('workspace_id').primaryKey(),data:text('data').notNull(),version:integer('version').notNull().default(1)});
+export const financeProjectGrants=sqliteTable('finance_project_grants',{workspaceId:text('workspace_id').notNull(),projectId:text('project_id').notNull(),memberId:text('member_id').notNull()},t=>[primaryKey({columns:[t.workspaceId,t.projectId,t.memberId]})]);
+export const financeVouchers=sqliteTable('finance_vouchers',{id:text('id').primaryKey(),workspaceId:text('workspace_id').notNull(),projectId:text('project_id').notNull(),reimbursementId:text('reimbursement_id').notNull(),name:text('name').notNull(),mime:text('mime').notNull(),content:text('content').notNull()});

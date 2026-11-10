@@ -51,6 +51,7 @@ export const commercialSchema = z
   );
 export const batchSchema = z
   .object({
+    actualShipDate:date.optional(),actualArrivalDate:date.optional(),acceptedDate:date.optional(),expectedAcceptanceDate:date.optional(),
     id: short.min(1),
     name: short.min(1),
     goods: text,

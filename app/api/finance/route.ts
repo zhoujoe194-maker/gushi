@@ -1,3 +1,4 @@
+import {mutateCash} from '../../server/cash';
 import {
   applyFinanceOperation,
   financeOperations,
@@ -63,6 +64,17 @@ export async function POST(req: Request) {
       : emptyBook(projectId);
     if (b.version !== version)
       throw new HttpError(409, "票款数据已被其他人更新，请刷新后重试");
+    // Both old and new screens settle into the same project book and bank allocation.
+    if (action === 'record_receipt' || action === 'record_supplier_payment') {
+      if (!canFinance(ctx.member)) throw new HttpError(403,'实际收付款只能由财务确认');
+      await mutateCash(ctx,{action:'settle',requestId:typeof body.requestId==='string'?body.requestId:crypto.randomUUID(),reference:body.reference,date:body.date,direction:action==='record_receipt'?'in':'out',amountCents:body.amountCents,note:body.note||'',allocations:[{projectId,kind:action==='record_receipt'?'customer':'supplier',targetId:action==='record_receipt'?body.planId:body.id,amountCents:body.amountCents}]});
+      const fresh=await ctx.db.prepare('SELECT data,version,updated_at FROM finance_books WHERE project_id=? AND workspace_id=?').bind(projectId,ctx.workspaceId).first<{data:string;version:number;updated_at:string}>();
+      return response({book:{...JSON.parse(fresh!.data),version:fresh!.version,updatedAt:fresh!.updated_at},event:{id:crypto.randomUUID(),projectId,createdAt:new Date().toISOString(),kind:'票款核销',actor:ctx.member.name,note:'财务已核对银行流水',changes:[]}});
+    }
+    if (action === 'void_receipt' || action === 'void_supplier_payment') {
+      const linked=action==='void_receipt'?b.receipts.find(r=>r.id===body.receiptId):b.suppliers?.find(p=>p.id===body.id)?.payments.find(r=>r.id===body.paymentId);
+      if(linked?.bankId) throw new HttpError(400,'该笔属于统一银行流水，请在现金流页面整体冲销，避免分摊不一致');
+    }
     const now = new Date().toISOString();
     let note = "",
       kind = "票款进度更新";
@@ -133,7 +145,9 @@ export async function POST(req: Request) {
           plans.reduce((s, p) => s + p.amountCents, 0) !== b.contractAmountCents
         )
           throw new HttpError(400, "收款计划合计必须等于合同金额");
-        b.plans = plans;
+        if (b.plans.some(old=>!plans.some(p=>p.id===old.id))) throw new HttpError(400,'已有收款计划必须沿用原编号，不能重复建立或覆盖');
+        if(plans.some(p=>p.amountCents<b.receipts.filter(r=>!r.voidAt&&r.planId===p.id).reduce((n,r)=>n+r.amountCents,0))) throw new HttpError(400,'计划金额不能小于已收金额');
+        b.plans = plans.map(p=>({...b.plans.find(old=>old.id===p.id),...p,cashStatus:'confirmed'}));
         b.reviewStatus = "已审核";
         note = `合同 ${b.contractNo} 已审核，收款计划 ${plans.length} 个节点`;
       } else {

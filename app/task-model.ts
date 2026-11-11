@@ -1,4 +1,4 @@
-import { Desk, Member, deskOf, isManager, isScopedManager } from './team';
+import { Desk, Member, hasGrant, isManager, isScopedManager, realRole } from './team';
 import { today, shiftDate } from './model';
 import type { TaskImage } from './task-images';
 export const TASK_STATUSES = [
@@ -37,22 +37,25 @@ export type DeskTask = {
   }[];
 };
 export const canDispatchTask = (m: Member) =>
-  isManager(m) || m.role === 'sales';
+  isManager(m) || realRole(m) === 'sales';
+// D1-RECTIFY: receiving scope follows the persisted capability grants. This is
+// equivalent to the old ability to switch into each granted desk, without any
+// runtime scope switch and without turning a collaborator into a manager.
 export const inReceivingTaskScope = (
   t: Pick<DeskTask, 'desk' | 'region'>,
   m: Member,
 ) =>
-  isManager(m) || t.desk === deskOf(m.role);
+  isManager(m) || hasGrant(m, t.desk);
 export const inTaskScope = (
   t: Pick<DeskTask, 'desk' | 'region'> & Partial<Pick<DeskTask, 'createdBy' | 'assigneeId'>>,
   m: Member,
 ) =>
   (inReceivingTaskScope(t, m) && (isManager(m) || t.assigneeId === m.id)) ||
-  (m.role === 'sales' &&
+  (realRole(m) === 'sales' &&
     t.createdBy === m.id);
 export const canManageTask = (t: DeskTask, m: Member) =>
   inTaskScope(t, m) &&
-  (isManager(m) || (m.role === 'sales' && t.createdBy === m.id));
+  (isManager(m) || (realRole(m) === 'sales' && t.createdBy === m.id));
 export const canHandleTask = (t: DeskTask, m: Member) =>
   inReceivingTaskScope(t, m) &&
   (isManager(m) || !t.assigneeId || t.assigneeId === m.id);

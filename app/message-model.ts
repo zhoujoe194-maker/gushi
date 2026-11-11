@@ -1,4 +1,4 @@
-import { Desk, Member, deskOf, roleInfo, canCreateProject } from './team';
+import { Desk, Member, deskOf, grantedDesks, roleInfo, canCreateProject } from './team';
 export type MessagePerson = Pick<
   Member,
   'id' | 'name' | 'role' | 'region' | 'status' | 'assignedDesks' | 'accountRole'
@@ -60,13 +60,19 @@ export type GroupUpdate = {
 export const canCreateGroup = canCreateProject;
 export const personKey = (id: string) => 'person:' + id;
 export const deskKey = (desk: Desk) => 'desk:' + desk;
-export const myMessageKeys = (m: Pick<Member, 'id' | 'role'>) => [
+// D1-RECTIFY: message access follows the persisted capability grants, so an
+// operations/aftersales account keeps exactly the desk conversations it could
+// read before (and a multi-capability account keeps both). No desk threads are
+// merged into an all-staff management group.
+export const myMessageKeys = (
+  m: Pick<Member, 'id' | 'role' | 'assignedDesks' | 'accountRole'>,
+) => [
   personKey(m.id),
-  deskKey(deskOf(m.role)),
+  ...grantedDesks(m).map((desk) => deskKey(desk)),
 ];
 export const belongsToThread = (
   t: ThreadIdentity,
-  m: Pick<Member, 'id' | 'role'>,
+  m: Pick<Member, 'id' | 'role' | 'assignedDesks' | 'accountRole'>,
 ) =>
   t.group
     ? t.group.members.some((p) => p.id === m.id)
@@ -81,22 +87,23 @@ export const threadKind = (t: ThreadIdentity) =>
         : '个人对台';
 export function threadPartner(
   t: ThreadIdentity,
-  m: Pick<Member, 'id' | 'role'>,
+  m: Pick<Member, 'id' | 'role' | 'assignedDesks' | 'accountRole'>,
 ): MessageEndpoint {
   if (t.group)
     return { key: 'group', label: t.group.name, kind: 'group', active: true };
   const personal = personKey(m.id);
   if (t.a.key === personal) return t.b;
   if (t.b.key === personal) return t.a;
-  return t.a.key === deskKey(deskOf(m.role)) ? t.b : t.a;
+  const mine = myMessageKeys(m);
+  return mine.includes(t.a.key) ? t.b : t.a;
 }
-export const senderFor = (t: ThreadIdentity, m: Pick<Member, 'id' | 'role'>) =>
+export const senderFor = (t: ThreadIdentity, m: Pick<Member, 'id' | 'role' | 'assignedDesks' | 'accountRole'>) =>
   t.group || [t.a.key, t.b.key].includes(personKey(m.id))
     ? personKey(m.id)
     : deskKey(deskOf(m.role));
 export const threadTitle = (
   t: ThreadIdentity,
-  m: Pick<Member, 'id' | 'role'>,
+  m: Pick<Member, 'id' | 'role' | 'assignedDesks' | 'accountRole'>,
 ) => threadPartner(t, m).label;
 export function endpointFor(
   key: string,

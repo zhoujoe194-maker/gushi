@@ -44,7 +44,6 @@ import {
   FileText,
   Download,
   RefreshCw,
-  SlidersHorizontal,
   Activity,
   Target,
   History,
@@ -154,7 +153,11 @@ const MANAGEMENT_SCOPES: Desk[] = ["management", "operations", "aftersales"];
 const projectArea = (m: Member) =>
   isManager(m) || m.role === "sales" || m.role === "finance";
 const managementScopeOf = (m: Member): Desk =>
-  m.scope && MANAGEMENT_SCOPES.includes(m.scope) ? m.scope : "management";
+  m.portal === "management" &&
+  m.capability &&
+  MANAGEMENT_SCOPES.includes(m.capability)
+    ? m.capability
+    : "management";
 function operationsNav(scope: Desk, filingsAuthorized: boolean): NavItem[] {
   const after = scope === "aftersales";
   return [
@@ -253,7 +256,7 @@ function HomeQuickLinks({ entries }: { entries: QuickEntry[] }) {
     </div>
   );
 }
-import { grantedPortals, hasPortal, hasDesk, inPortal, scopesInPortal } from "./access";
+import { grantedPortals, hasPortal, hasDesk, inPortal } from "./access";
 import { FilingEditor } from "./filing-editor";
 import {
   RoleHome,
@@ -274,7 +277,6 @@ import {
   Desk,
   Portal,
   PORTAL_IDS,
-  SCOPES_IN_PORTAL,
   portalInfo,
 } from "./team";
 import { FinanceBook, emptyBook, totals } from "./finance-model";
@@ -414,32 +416,21 @@ function Modal({
 }
 export default function Workspace({
   portal = "management",
-  initialScope,
   initialMember,
   demoEnabled = false,
   demoAccount = false,
-  demoScope,
 }: {
-  // D1: the three user-facing workbenches. Granular desk identity is only
-  // selected inside a workbench through the 岗位范围 switcher.
+  // D1-RECTIFY: exactly three workbenches. The professional identity comes
+  // from the account role; there is no granular scope switcher.
   portal?: Portal;
-  initialScope?: Desk;
   initialMember?: Member;
   demoEnabled?: boolean;
   demoAccount?: boolean;
-  demoScope?: Desk;
 }) {
-  // Resolve the effective granular scope exactly like the server does, so a
-  // deep link such as /work/management?scope=operations works even before the
-  // first data fetch. Members always carry a scope after inPortal().
   const [member, setMember] = useState<Member>(() =>
       initialMember
-        ? inPortal(
-            initialMember,
-            portal,
-            initialScope ?? initialMember.scope,
-          )
-        : demoRoleMember(portal, demoScope, demoAccount),
+        ? inPortal(initialMember, portal)
+        : demoRoleMember(portal, demoAccount),
     ),
     [members, setMembers] = useState<Member[]>(demoEnabled ? demoMembers : []),
     [finances, setFinances] = useState<Record<string, FinanceBook>>({}),
@@ -463,74 +454,18 @@ export default function Workspace({
       ? grantedPortals(demoMultiMember)
       : [...PORTAL_IDS]
     : grantedPortals(viewMember);
-  const scopeChoices: Desk[] = demoEnabled
-    ? demoAccount
-      ? scopesInPortal(demoMultiMember, activePortal)
-      : SCOPES_IN_PORTAL[activePortal]
-    : scopesInPortal(viewMember, activePortal);
-  const currentScope: Desk =
-    viewMember.scope && scopeChoices.includes(viewMember.scope)
-      ? viewMember.scope
-      : scopeChoices[0] ?? managementScopeOf(viewMember);
   const pageDescription = (id: string) =>
     id === "overview"
       ? overviewDescription(viewMember, activePortal)
       : TAB_DESCRIPTIONS[id] || "";
-  // Demo only: the fake account may browse every identity inside the three
-  // workbenches; live accounts are strictly limited to granted portals/scopes.
-  const demoIdentityOptions: {
-    value: string;
-    label: string;
-    portal: Portal;
-    scope?: Desk;
-  }[] = [
-    { value: "sales", label: "销售工作台", portal: "sales" },
-    {
-      value: "management",
-      label: "管理工作台 · 管理岗",
-      portal: "management",
-      scope: "management",
-    },
-    {
-      value: "management:operations",
-      label: "管理工作台 · 运营岗",
-      portal: "management",
-      scope: "operations",
-    },
-    {
-      value: "management:aftersales",
-      label: "管理工作台 · 售后岗",
-      portal: "management",
-      scope: "aftersales",
-    },
-    { value: "finance", label: "财务工作台", portal: "finance" },
-  ];
-  const demoIdentityChoices = demoAccount
-    ? demoIdentityOptions.filter(
-        (choice) =>
-          hasPortal(demoMultiMember, choice.portal) &&
-          (!choice.scope ||
-            scopesInPortal(demoMultiMember, choice.portal).includes(
-              choice.scope,
-            )),
-      )
-    : demoIdentityOptions;
-  const demoIdentityValue =
-    activePortal === "management"
-      ? "management" +
-        (currentScope === "management" ? "" : ":" + currentScope)
-      : activePortal;
-  function demoHref(next: Portal, scope?: Desk) {
+  // Demo may still switch between the three workbenches it was granted; it
+  // never exposes a granular operations/aftersales scope switch.
+  function demoHref(next: Portal) {
     const keepMulti = demoAccount && hasPortal(demoMultiMember, next);
-    return (
-      "/demo?role=" +
-      next +
-      (next === "management" && scope ? "&scope=" + scope : "") +
-      (keepMulti ? "&account=multi" : "")
-    );
+    return "/demo?role=" + next + (keepMulti ? "&account=multi" : "");
   }
-  function liveHref(next: Portal, scope?: Desk) {
-    return "/work/" + next + (scope ? "?scope=" + scope : "");
+  function liveHref(next: Portal) {
+    return "/work/" + next;
   }
 
   const [tab, setTab] = useState("overview"),
@@ -614,11 +549,12 @@ export default function Workspace({
     )
       setTab(target);
     if (demoEnabled) {
-      const state = roleDemo(portal, demoScope, demoAccount);
+      const state = roleDemo(portal, demoAccount);
       // Demo tasks are dispatched to the selected granular identity so an
       // operations/aftersales/sales demo actually has work to act on.
       const tasks = demoDeskTasks().map((task) =>
-        !isManager(state.member) && task.desk === deskOf(state.member.role)
+        !isManager(state.member) &&
+        hasDesk(state.member, task.desk)
           ? {
               ...task,
               assigneeId: state.member.id,
@@ -660,13 +596,13 @@ export default function Workspace({
   const workspaceFetch = useCallback(
     (url: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
-      // D1: every workspace request is resolved against the active workbench
-      // and the effective granular scope, never the retired five-desk header.
+      // D1-RECTIFY: every workspace request is resolved against the active
+      // workbench only; the retired scope/desk headers are never sent.
+      // D1-RECTIFY: only the workbench is sent; there is no scope header.
       headers.set("X-Workspace-Portal", portal);
-      if (member.scope) headers.set("X-Workspace-Scope", member.scope);
       return fetch(url, { ...init, headers });
     },
-    [portal, member.scope],
+    [portal],
   );
   async function loadLive(silent = false) {
     if (!silent) setLoading(true);
@@ -733,14 +669,8 @@ export default function Workspace({
   }
   function switchMode() {
     window.location.href = demo
-      ? liveHref(
-          activePortal,
-          activePortal === "management" ? currentScope : undefined,
-        )
-      : demoHref(
-          activePortal,
-          activePortal === "management" ? currentScope : undefined,
-        );
+      ? liveHref(activePortal)
+      : demoHref(activePortal);
   }
   async function financeAction(
     project: Project,
@@ -886,12 +816,17 @@ export default function Workspace({
         if (!desks?.length) throw Error("至少选择一个工作台");
         if (!data.email && !data.phone) throw Error("邮箱或手机号至少填写一项");
         const previous = members.find((m) => m.id === data.id);
+        const role = (data.professionRole ||
+          previous?.accountRole ||
+          previous?.role ||
+          "operations") as Member["role"];
         const updated = {
           ...previous,
           ...data,
           id: previous?.id || crypto.randomUUID(),
-          role: data.defaultDesk,
-          accountRole: data.defaultDesk,
+          role,
+          accountRole: role,
+          defaultDesk: data.defaultDesk as Member["defaultDesk"],
           profileCompleted: previous?.profileCompleted ?? false,
           bound: true,
           mustChangePassword: !!data.password || previous?.mustChangePassword,
@@ -1795,29 +1730,6 @@ export default function Workspace({
                 </select>
               </label>
             )}
-            {scopeChoices.length > 1 && (
-              <label className="desk-switcher">
-                <SlidersHorizontal size={14} />
-                <select
-                  aria-label="切换岗位范围"
-                  value={currentScope}
-                  onChange={(e) => {
-                    const next = e.target.value as Desk;
-                    window.location.assign(
-                      demo
-                        ? demoHref(activePortal, next)
-                        : liveHref(activePortal, next),
-                    );
-                  }}
-                >
-                  {scopeChoices.map((scope) => (
-                    <option key={scope} value={scope}>
-                      {scopeName(scope)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <button
               className="icon-button"
               aria-label="同步最新数据"
@@ -1888,7 +1800,7 @@ export default function Workspace({
                   <span className="banner-detail">
                     {" "}
                     {
-                      "以本人账号处理当前工作台的业务、任务和消息；可在顶部切换已授权工作台与岗位范围。"
+                      "以本人账号处理当前工作台的业务、任务和消息；可在顶部切换已授权工作台。运营、售后按本人专业岗位协作，内部岗位范围不可切换。"
                     }
                   </span>
                 </>
@@ -2000,32 +1912,6 @@ export default function Workspace({
                     )}
                   </div>
                 )}
-              {demo && (
-                <div className="demo-role-selector">
-                  <span>体验岗位页面</span>
-                  <select
-                    aria-label="选择演示岗位"
-                    value={demoIdentityValue}
-                    onChange={(e) => {
-                      const choice = demoIdentityChoices.find(
-                        (item) => item.value === e.target.value,
-                      );
-                      if (choice)
-                        window.location.href = demoHref(
-                          choice.portal,
-                          choice.scope,
-                        );
-                    }}
-                  >
-                    {demoIdentityChoices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                  <small>演示账号与真实成员完全分开。</small>
-                </div>
-              )}
               {tab === "results" && (
                 <ProjectResults
                   member={viewMember}

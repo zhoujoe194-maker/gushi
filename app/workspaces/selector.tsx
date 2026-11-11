@@ -10,16 +10,11 @@ import {
   LogOut,
   Star,
 } from 'lucide-react';
-import {
-  Member,
-  PORTALS,
-  Portal,
-  SCOPES_IN_PORTAL,
-  roleInfo,
-} from '../team';
-import { grantedPortals, defaultPortal, scopesInPortal } from '../access';
-// D1: the only entrances are the three workbenches. Operations and aftersales
-// still have their own granular scope inside the management workbench.
+import { Member, PORTALS, Portal, realRole, roleInfo } from '../team';
+import { grantedPortals, defaultPortal } from '../access';
+// D1-RECTIFY: the only entrances are the three workbenches. Operations and
+// aftersales are professional identities inside the management workbench, not
+// selectable scopes or separate workbenches.
 const icons = {
   sales: BriefcaseBusiness,
   management: ShieldCheck,
@@ -84,14 +79,13 @@ export default function DeskSelector({
           {demo
             ? '演示账号可进入全部三个工作台。'
             : '你已完成账号设置。这里只显示管理人员为你开通的工作台。'}
-          三个工作台是日常工作的主要入口；运营、售后在管理工作台内协作，无需单独进入。
+          三个工作台是日常工作的唯一入口；运营、售后按本人岗位在管理工作台内协作，无需也无法切换内部岗位范围。
         </p>
       </section>
       <div className="desk-selector-grid">
         {portals.map((p) => {
           const portal = PORTALS.find((x) => x.id === p)!;
           const Icon = icons[p];
-          const scopes = demo ? SCOPES_IN_PORTAL[p] : scopesInPortal(member, p);
           return (
             <Link
               key={p}
@@ -109,7 +103,7 @@ export default function DeskSelector({
               )}
               <h2>{portal.name}</h2>
               <p>{portal.description}</p>
-              <p>岗位范围：{scopes.map((d) => roleInfo(d).name).join(' · ')}</p>
+              <p>专业岗位：{roleInfo(realRole(member)).name}</p>
               <span className="desk-selector-enter">
                 进入工作台
                 <ArrowRight size={17} />

@@ -56,15 +56,13 @@ async function api<T = Record<string, unknown>>(
   path: string,
   data?: unknown,
   portal?: string,
-  scope?: string,
 ): Promise<T> {
   const r = await fetch('/api/messages' + path, {
     cache: 'no-store',
     headers: {
-      // D1: the active workbench plus its effective granular scope decide the
-      // permission context on the server; the legacy desk header is gone.
+      // D1-RECTIFY: only the workbench selects the permission context; there
+      // is no granular scope header any more.
       ...(portal ? { 'X-Workspace-Portal': portal } : {}),
-      ...(scope ? { 'X-Workspace-Scope': scope } : {}),
       ...(data ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(data ? { method: 'POST', body: JSON.stringify(data) } : {}),
@@ -98,8 +96,8 @@ export default function MessageCenter({
 }) {
   const request = useCallback(
     <T = Record<string, unknown>,>(path: string, data?: unknown) =>
-      api<T>(path, data, member.portal, member.scope),
-    [member.portal, member.scope],
+      api<T>(path, data, member.portal),
+    [member.portal],
   );
   const [inbox, setInbox] = useState<MessageInbox>({
       threads: [],

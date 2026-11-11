@@ -20,7 +20,6 @@ import {
   Member,
   ROLES,
   Desk,
-  deskOf,
   isManager,
   isScopedManager,
 } from './team';
@@ -374,7 +373,6 @@ export default function TaskCenter({
                   <p>{h.note}</p>
                   <TaskImageGallery
                     images={h.images || []}
-                    desk={deskOf(member.role)}
                   />
                   <small>
                     {new Date(h.at).toLocaleString('zh-CN', {
@@ -443,7 +441,6 @@ function Feedback({
             removeSaved={(id) =>
               setSaved((images) => images.filter((image) => image.id !== id))
             }
-            desk={deskOf(member.role)}
             busy={busy}
             reading={reading}
             setReading={setReading}
@@ -468,7 +465,6 @@ function Feedback({
           <p className="task-text">{task.result || '尚未反馈处理结果。'}</p>
           <TaskImageGallery
             images={task.images || []}
-            desk={deskOf(member.role)}
           />
         </div>
       )}

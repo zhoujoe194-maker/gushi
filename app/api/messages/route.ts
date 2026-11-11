@@ -128,7 +128,7 @@ export async function GET(req: Request) {
  (SELECT COUNT(*) FROM message_items u WHERE u.thread_id=t.id AND u.seq>COALESCE(r.last_seq,0) AND u.actor_id<>? AND (u.project_id='' OR u.project_id IN (SELECT value FROM json_each(?)))) AS unread
  FROM message_threads t JOIN message_items i ON i.seq=(SELECT MAX(seq) FROM message_items WHERE thread_id=t.id AND (project_id='' OR project_id IN (SELECT value FROM json_each(?))))
  LEFT JOIN message_reads r ON r.thread_id=t.id AND r.member_id=?
- WHERE t.workspace_id=? AND ${threadAccessSQL} ORDER BY i.seq DESC`,
+ WHERE t.workspace_id=? AND ${threadAccessSQL(myMessageKeys(ctx.member))} ORDER BY i.seq DESC`,
       )
       .bind(
         ctx.member.id,
@@ -149,7 +149,7 @@ export async function GET(req: Request) {
       >();
     const participants = await ctx.db
       .prepare(
-        `SELECT p.thread_id,p.member_id FROM message_participants p JOIN message_threads t ON t.id=p.thread_id WHERE t.workspace_id=? AND ${threadAccessSQL}`,
+        `SELECT p.thread_id,p.member_id FROM message_participants p JOIN message_threads t ON t.id=p.thread_id WHERE t.workspace_id=? AND ${threadAccessSQL(myMessageKeys(ctx.member))}`,
       )
       .bind(ctx.workspaceId, ...threadAccessValues(ctx))
       .all<{ thread_id: string; member_id: string }>();
@@ -223,7 +223,7 @@ export async function POST(req: Request) {
       if (!exists) throw new HttpError(400, '已读位置不正确');
       const r = await ctx.db
         .prepare(
-          `INSERT INTO message_reads(workspace_id,thread_id,member_id,last_seq) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM members WHERE id=? AND status='active' AND version=?) AND EXISTS(SELECT 1 FROM message_threads t WHERE t.id=? AND t.workspace_id=? AND ${threadAccessSQL}) ON CONFLICT(thread_id,member_id) DO UPDATE SET last_seq=MAX(message_reads.last_seq,excluded.last_seq)`,
+          `INSERT INTO message_reads(workspace_id,thread_id,member_id,last_seq) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM members WHERE id=? AND status='active' AND version=?) AND EXISTS(SELECT 1 FROM message_threads t WHERE t.id=? AND t.workspace_id=? AND ${threadAccessSQL(myMessageKeys(ctx.member))}) ON CONFLICT(thread_id,member_id) DO UPDATE SET last_seq=MAX(message_reads.last_seq,excluded.last_seq)`,
         )
         .bind(
           ctx.workspaceId,

@@ -1,7 +1,6 @@
 'use client';
-/* eslint-disable @next/next/no-img-element -- Private images require session cookies and a desk-specific URL; do not proxy them through the public image optimizer. */
+/* eslint-disable @next/next/no-img-element -- Private images require session cookies; do not proxy them through the public image optimizer. */
 import { useState, useId } from 'react';
-import type { Desk } from './team';
 import {
   MAX_TASK_IMAGES,
   MAX_TASK_IMAGE_BYTES,
@@ -14,12 +13,10 @@ import './task-images.css';
 export type PendingTaskImage = { file: File; image: TaskImage };
 export function TaskImageGallery({
   images,
-  desk,
   remove,
   disabled = false,
 }: {
   images: TaskImage[];
-  desk: Desk;
   remove?: (id: string) => void;
   disabled?: boolean;
 }) {
@@ -49,13 +46,13 @@ export function TaskImageGallery({
             </details>
           ) : (
             <a
-              href={taskImageUrl(image, desk)}
+              href={taskImageUrl(image)}
               target="_blank"
               rel="noreferrer"
               aria-label={`查看大图：${image.name}（新窗口）`}
             >
               <img
-                src={taskImageUrl(image, desk)}
+                src={taskImageUrl(image)}
                 alt={image.name}
                 width={image.width || 640}
                 height={image.height || 480}
@@ -86,7 +83,6 @@ export function TaskImagePicker({
   pending,
   setPending,
   removeSaved,
-  desk,
   busy,
   reading,
   setReading,
@@ -95,7 +91,6 @@ export function TaskImagePicker({
   pending: PendingTaskImage[];
   setPending: (value: PendingTaskImage[]) => void;
   removeSaved: (id: string) => void;
-  desk: Desk;
   busy: boolean;
   reading: boolean;
   setReading: (value: boolean) => void;
@@ -172,7 +167,6 @@ export function TaskImagePicker({
       )}
       <TaskImageGallery
         images={[...saved, ...pending.map((p) => p.image)]}
-        desk={desk}
         disabled={busy || reading}
         remove={(id) => {
           if (pending.some((p) => p.image.id === id))

@@ -1,4 +1,3 @@
-import type { Desk } from './team';
 
 export const MAX_TASK_IMAGES = 6;
 export const MAX_TASK_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -13,9 +12,10 @@ export type TaskImage = {
   createdBy: string;
   previewUrl?: string;
 };
-export const taskImageUrl = (image: TaskImage, desk: Desk) =>
-  image.previewUrl ||
-  `/api/tasks/images/${encodeURIComponent(image.id)}?desk=${desk}`;
+// D1-RECTIFY: private image access is authorized on the server from the
+// session's capability grants; no desk/scope query hint is sent.
+export const taskImageUrl = (image: TaskImage) =>
+  image.previewUrl || `/api/tasks/images/${encodeURIComponent(image.id)}`;
 
 export function readTaskImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

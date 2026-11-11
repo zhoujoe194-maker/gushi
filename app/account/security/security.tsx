@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { Member, portalInfo, roleInfo } from '../../team';
 import {
-  grantedDesks,
   grantedPortals,
   needsOnboarding,
   realNameProblem,
@@ -94,9 +93,9 @@ export default function Security({
               ))}
             </div>
             <p>
-              岗位范围：
-              {grantedDesks(member).map((d) => roleInfo(d).name).join('、')}
-              。岗位由管理人员分配，如有不符请联系管理工作台调整。
+              专业岗位：
+              {roleInfo(member.accountRole || member.role).name}
+              。专业岗位由管理人员分配，如有不符请联系管理工作台调整。
             </p>
           </div>
         </section>

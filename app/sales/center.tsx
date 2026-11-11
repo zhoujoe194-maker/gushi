@@ -140,11 +140,10 @@ function download(inbox: SalesInbox) {
   a.click();
   URL.revokeObjectURL(url);
 }
-// D1: sales performance reads the active workbench (portal) plus the effective
-// granular scope instead of the retired five-desk header.
+// D1-RECTIFY: sales performance reads only the active workbench; there is no
+// granular scope header.
 const workspaceHeaders = (member: Member) => ({
   'X-Workspace-Portal': member.portal || 'management',
-  ...(member.scope ? { 'X-Workspace-Scope': member.scope } : {}),
 });
 export default function SalesCenter({
   member,
@@ -204,7 +203,7 @@ export default function SalesCenter({
           });
       });
     return () => controller.abort();
-  }, [demo, key, month, person, member.portal, member.scope]);
+  }, [demo, key, month, person, member.portal]);
   const inbox = demo
     ? demoSalesInbox(member, month, person, demoRecords)
     : loaded?.key === key

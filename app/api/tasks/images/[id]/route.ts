@@ -8,9 +8,9 @@ export async function GET(
   route: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getContext(req, {
-      desk: new URL(req.url).searchParams.get('desk') || undefined,
-    });
+    // D1-RECTIFY: image access is checked by capability grants, not by any
+    // legacy ?desk= scope hint.
+    const ctx = await getContext(req);
     const { id } = await route.params;
     const row = await ctx.db
       .prepare(

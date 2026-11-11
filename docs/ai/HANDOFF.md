@@ -15,3 +15,6 @@
 ## 阅读与验证
 依次读AGENTS、本文、PROJECT_CONTEXT；任务需要时读ARCHITECTURE、DECISIONS、WORKSTREAMS、TESTING及docs/v2-phase4d1.md。无需重读全部聊天。
 命令：`git status --short`、`git log -5 --oneline`；`node node_modules/typescript/bin/tsc --noEmit`；`npm run build`；`RUN_LOCAL_TESTS=1 node tests/d1-portals.mjs`；`node tests/v2-cashflow.mjs`。先按TESTING准备隔离环境。不要把测试指向真实库，不保存密码或客户数据到仓库。
+
+## 2026-11-12 审查更新
+DSH Baton只读审查与Codex复核完成，见D1_REVIEW.md。当前任务已结束，等待定向修复批准。实际重新构建、类型检查及97入口/99财务/26计算/695 release通过（有重叠）；未重跑浏览器。人员降权UI、默认scope及owner财务边界等仍待处理。

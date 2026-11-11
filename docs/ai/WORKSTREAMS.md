@@ -5,7 +5,7 @@
 | ID | 目标 | 负责人 | 分支/worktree | 可写范围 | 依赖 | 状态 | 测试/提交/集成 |
 |---|---|---|---|---|---|---|---|
 | CTX-01 | 上下文体系 | 当前Codex文档窗口 | codex/gushios-v2，当前独占checkout | AGENTS.md、docs/ai/*.md | D1基线98774cd | completed | 文档静态检查；提交用 git log -1 -- docs/ai 查询；本地提交，不自动推送 |
-| D1-REVIEW | 独立复核D1 | 待指派 | 待分配codex/review-d1及独立worktree | 默认只读，报告范围领取后确定 | 0f76484 | planned | 尚未启动；待批准 |
+| D1-REVIEW | 独立复核D1 | Codex核验、DSH只读审查 | codex/gushios-v2；DSH只读共享checkout | Codex仅docs/ai报告及交接；DSH无写权限 | 0f76484 | completed | 见D1_REVIEW.md；发现问题待修复，不表示D1验收通过 |
 
 ## 推荐职责（不是自动分配的新任务）
 产品窗口：需求、验收标准与决策草案；前端：导航、页面、手机交互；后端：API、权限与模型；财务：现金流和收付口径；测试：独立复现与审查；集成：登记任务、合入V2、统一更新上下文。

@@ -1209,15 +1209,17 @@ project.workflow.tasks = [
 ];
 project = await save('manager', 'workflow', project);
 op = await projectFor('finance');
+const financeTask = op.workflow.tasks.find((t) => t.department === 'finance');
 check(
-  op.workflow.tasks.length === 1 &&
-    op.workflow.tasks[0].department === 'finance' &&
+  !!financeTask &&
+    op.workflow.tasks.some((t) => t.department === 'operations') &&
+    !op.workflow.tasks.some((t) => t.department === 'aftersales') &&
     !JSON.stringify(op).includes('QA-HIDDEN-AFTER-TASK'),
-  '旧版协作按当前工作台过滤（V2 边界）',
+  '旧版协作按持久岗位能力过滤（V2 无 scope 切换）',
 );
-op.workflow.tasks[0].status = '已完成';
-op.workflow.tasks[0].result = '已办结';
-op.workflow.tasks[0].completedAt = now;
+financeTask.status = '已完成';
+financeTask.result = '已办结';
+financeTask.completedAt = now;
 op = await save('finance', 'workflow', op, '完成协作');
 check(
   (await projectFor('manager')).workflow.tasks.length === 3,

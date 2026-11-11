@@ -32,7 +32,10 @@ const accountsFile =
   process.env.QA_ACCOUNTS_FILE || '/private/tmp/gushi-d1-browser/accounts.json';
 const playwrightModule =
   process.env.PLAYWRIGHT_MODULE || '/private/tmp/gushi-d1-pw/node_modules/playwright';
-const screenshotDir = resolve(workspaceRoot, 'outputs/gushios-v2-d1/browser');
+// QA_SCREENSHOT_DIR lets a sandboxed/CI run keep evidence outside the repo.
+const screenshotDir = process.env.QA_SCREENSHOT_DIR
+  ? resolve(process.env.QA_SCREENSHOT_DIR)
+  : resolve(workspaceRoot, 'outputs/gushios-v2-d1/browser');
 const VIEWPORTS = [
   { width: 360, height: 740 },
   { width: 390, height: 844 },

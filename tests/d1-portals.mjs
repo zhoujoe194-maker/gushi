@@ -295,6 +295,10 @@ const redirectPath = (res) => {
 const isRedirect = (res) => [301, 302, 303, 307, 308].includes(res.status);
 // Page-level denial: the UI may redirect to /workspaces or /, or render the
 // login/denial entry page. In every case the portal content must not leak.
+const isManagerPayload = (m) =>
+  ['owner', 'management', 'general', 'director', 'branch_manager'].includes(
+    m.role,
+  );
 function deniedPage(res, forbidden) {
   let denied = false;
   if (isRedirect(res)) {
@@ -304,6 +308,24 @@ function deniedPage(res, forbidden) {
   else if (res.status === 200) denied = res.text.includes('未获授权');
   if (!denied) return false;
   return !forbidden.some((marker) => res.text.includes(marker));
+}
+async function loginCookie(user) {
+  const r = await fetch(base + '/api/auth', {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'login',
+      identifier: rows[user].email,
+      password: qaPassword,
+    }),
+  });
+  const set = r.headers.get('set-cookie') || '';
+  const match = /gushi_session=([^;]+)/.exec(set);
+  return {
+    status: r.status,
+    data: await r.json().catch(() => ({})),
+    cookie: match ? 'gushi_session=' + match[1] : '',
+  };
 }
 async function login(user) {
   const r = await fetch(base + '/api/auth', {
@@ -369,9 +391,15 @@ try {
   check(
     isRedirect(legacyScopedPage) &&
       redirectPath(legacyScopedPage) === '/work/management' &&
-      new URL(legacyScopedPage.location, base).searchParams.get('scope') ===
-        'aftersales',
-    '旧岗位入口重定向时保留 ?scope= 岗位范围',
+      !new URL(legacyScopedPage.location, base).searchParams.has('scope'),
+    '旧岗位入口与 ?scope= 只跳转工作台，不保留内部岗位范围',
+  );
+  const scopedPortalPage = await page('owner', '/work/management?scope=operations');
+  check(
+    isRedirect(scopedPortalPage) &&
+      redirectPath(scopedPortalPage) === '/work/management' &&
+      !new URL(scopedPortalPage.location, base).searchParams.has('scope'),
+    '管理工作台 ?scope= 旧链接被清洗为三工作台入口',
   );
   const legacyRolePage = await page('owner', '/work/technical');
   check(
@@ -401,16 +429,18 @@ try {
   });
   check(
     ownerManagementCtx.member.role === 'owner' &&
-      ownerManagementCtx.member.scope === 'management',
-    '系统管理员在管理工作台保持 owner 管理权限',
+      ownerManagementCtx.member.capability === 'management' &&
+      !('scope' in ownerManagementCtx.member),
+    '系统管理员在管理工作台保持 owner 管理权限且无内部岗位范围字段',
   );
   const ownerFinanceCtx = await ok('owner', '/api/workspace', {
     portal: 'finance',
   });
   check(
-    ownerFinanceCtx.member.role === 'finance' &&
-      ownerFinanceCtx.member.scope === 'finance',
-    '系统管理员在财务工作台的岗位范围解析为财务',
+    ownerFinanceCtx.member.role === 'owner' &&
+      ownerFinanceCtx.member.portal === 'finance' &&
+      !('scope' in ownerFinanceCtx.member),
+    '系统管理员进入财务工作台仍保留真实 owner 身份，财务写权限由工作台决定',
   );
   const ownerSession = await ok('owner', '/api/session');
   check(
@@ -521,8 +551,9 @@ try {
   });
   check(
     legacyOperationCtx.member.role === 'operations' &&
-      legacyOperationCtx.member.scope === 'operations',
-    '无 desks 列的旧运营账号在管理工作台保持运营岗位范围',
+      legacyOperationCtx.member.capability === 'operations' &&
+      !('scope' in legacyOperationCtx.member),
+    '无 desks 列的旧运营账号在管理工作台保持真实运营岗位，无内部范围字段',
   );
   check(
     (await api('legacy-operation', '/api/workspace', { portal: 'finance' }))
@@ -535,11 +566,10 @@ try {
     { portal: 'management' },
   );
   check(
-    legacySalesOpsManagement.member.role === 'operations' &&
-      legacySalesOpsManagement.member.scope === 'operations' &&
-      Array.isArray(legacySalesOpsManagement.member.scopes) &&
-      legacySalesOpsManagement.member.scopes.includes('operations'),
-    '旧 sales+operations 兼岗在管理工作台的默认岗位范围为运营',
+    legacySalesOpsManagement.member.role === 'sales' &&
+      legacySalesOpsManagement.member.capability === 'operations' &&
+      legacySalesOpsManagement.member.portal === 'management',
+    '旧 sales+operations 兼岗在管理工作台按真实销售身份协作，能力显示为运营',
   );
   const legacySalesOpsSales = await ok(
     'legacy-sales-operations',
@@ -563,8 +593,9 @@ try {
   check(
     opsManagement.member.role === 'operations' &&
       opsManagement.member.portal === 'management' &&
-      opsManagement.member.scope === 'operations',
-    '运营账号在管理工作台的有效岗位为运营',
+      opsManagement.member.capability === 'operations' &&
+      !('scope' in opsManagement.member),
+    '运营账号在管理工作台只有真实运营岗位，没有内部岗位范围',
   );
   check(
     Array.isArray(opsManagement.projects) && opsManagement.projects.length === 0,
@@ -640,9 +671,18 @@ try {
     (await api('ops', '/api/workspace', { desk: 'finance' })).status === 403,
     '运营账号伪造旧请求头 x-workspace-desk: finance 被拒绝',
   );
+  const opsLegacyManagementDesk = await api('ops', '/api/workspace', {
+    desk: 'management',
+  });
   check(
-    (await api('ops', '/api/workspace', { desk: 'management' })).status === 403,
-    '旧请求头 x-workspace-desk: management 被拒绝（运营未获管理岗位范围）',
+    opsLegacyManagementDesk.status === 200 &&
+      opsLegacyManagementDesk.data.member.role === 'operations' &&
+      !isManagerPayload(opsLegacyManagementDesk.data.member),
+    '旧请求头 x-workspace-desk: management 仅提示管理工作台，不把运营映射为管理',
+  );
+  check(
+    (await api('ops', '/api/team', { desk: 'management' })).status === 403,
+    '运营经旧请求头进入管理工作台仍不能访问人员管理',
   );
   check(
     (await api('ops', '/api/workspace', { portal: 'bogus-portal' })).status ===
@@ -717,8 +757,9 @@ try {
   });
   check(
     afterManagement.member.role === 'aftersales' &&
-      afterManagement.member.scope === 'aftersales',
-    '售后账号在管理工作台的有效岗位为售后',
+      afterManagement.member.capability === 'aftersales' &&
+      !('scope' in afterManagement.member),
+    '售后账号在管理工作台只有真实售后岗位，没有内部岗位范围',
   );
   check(
     afterManagement.projects.length === 0,
@@ -835,8 +876,9 @@ try {
   });
   check(
     mgrFinManagement.member.role === 'management' &&
-      mgrFinManagement.member.scope === 'management',
-    '管理+财务兼岗在管理工作台的岗位范围为管理',
+      mgrFinManagement.member.capability === 'management' &&
+      !('scope' in mgrFinManagement.member),
+    '管理+财务兼岗在管理工作台保持真实管理岗位',
   );
   check(
     mgrFinManagement.projects.length === 1,
@@ -846,9 +888,10 @@ try {
     portal: 'finance',
   });
   check(
-    mgrFinFinance.member.role === 'finance' &&
-      mgrFinFinance.member.scope === 'finance',
-    '管理+财务兼岗在财务工作台的岗位范围为财务',
+    mgrFinFinance.member.role === 'management' &&
+      mgrFinFinance.member.portal === 'finance' &&
+      !('scope' in mgrFinFinance.member),
+    '管理+财务兼岗在财务工作台保持真实管理身份，财务写权限由财务工作台授予',
   );
   // A sales contract enters the review queue first.
   const submitted = await api('sales', '/api/finance', {
@@ -934,89 +977,135 @@ try {
     '管理+财务兼岗可进入两个已授权工作台页面',
   );
 
-  // ------------------------------------- 8. granular scope switching/validation ---
+  // ------------------------------------- 7b. owner finance workbench boundary ---
+  const approvedPlan = financeReview.data.book.plans[0];
+  const ownerManagementReceipt = await api('owner', '/api/finance', {
+    portal: 'management',
+    body: {
+      action: 'record_receipt',
+      projectId,
+      version: financeReview.data.book.version,
+      planId: approvedPlan.id,
+      amountCents: 100,
+      date: '2026-11-01',
+      reference: 'OWNER-MGMT-' + randomUUID(),
+      note: '',
+    },
+  });
+  check(
+    ownerManagementReceipt.status === 403,
+    'owner 在管理工作台对财务写保持只读（实际收款 403）',
+  );
+  const ownerManagementSettle = await api('owner', '/api/cashflow', {
+    portal: 'management',
+    body: {
+      action: 'settle',
+      requestId: randomUUID(),
+      reference: 'OWNER-MGMT-' + randomUUID(),
+      date: '2026-11-01',
+      direction: 'in',
+      amountCents: 100,
+      allocations: [
+        {
+          projectId,
+          kind: 'customer',
+          targetId: approvedPlan.id,
+          amountCents: 100,
+        },
+      ],
+    },
+  });
+  check(
+    ownerManagementSettle.status === 403,
+    'owner 在管理工作台不能执行银行收付款核销',
+  );
+  const ownerFinanceReceipt = await api('owner', '/api/finance', {
+    portal: 'finance',
+    body: {
+      action: 'record_receipt',
+      projectId,
+      version: financeReview.data.book.version,
+      planId: approvedPlan.id,
+      amountCents: 100,
+      date: '2026-11-01',
+      reference: 'OWNER-FIN-' + randomUUID(),
+      note: '',
+    },
+  });
+  check(
+    ownerFinanceReceipt.status === 200 &&
+      ownerFinanceReceipt.data.book.receipts.length === 1,
+    'owner 在财务工作台可实际确认收款',
+  );
+
+  // ----------------------------------- 8. no internal scope switching exists ---
   const opsAfterSession = await ok('ops-after', '/api/session');
   check(
     opsAfterSession.member.portal === 'management' &&
-      opsAfterSession.member.scope === 'operations',
-    '运营+售后兼岗默认解析到管理工作台运营岗位',
+      opsAfterSession.member.role === 'operations' &&
+      opsAfterSession.member.capability === 'operations' &&
+      !('scope' in opsAfterSession.member),
+    '运营+售后兼岗默认解析到管理工作台真实运营岗位',
   );
-  const opsAfterDefault = await ok('ops-after', '/api/workspace', {
+  const opsAfterTasks = await ok('ops-after', '/api/tasks', {
     portal: 'management',
   });
   check(
-    opsAfterDefault.member.scope === 'operations' &&
-      Array.isArray(opsAfterDefault.member.scopes) &&
-      opsAfterDefault.member.scopes.includes('operations') &&
-      opsAfterDefault.member.scopes.includes('aftersales'),
-    '运营+售后兼岗在管理工作台拥有两个岗位范围',
+    opsAfterTasks.tasks.some((t) => t.id === 'd1-task-dual-ops') &&
+      opsAfterTasks.tasks.some((t) => t.id === 'd1-task-dual-after'),
+    '运营+售后兼岗无需切换范围即可读取两类本人任务（历史授权等价）',
   );
-  const opsAfterScope = await ok('ops-after', '/api/workspace', {
-    portal: 'management',
-    scope: 'aftersales',
-  });
-  check(
-    opsAfterScope.member.scope === 'aftersales' &&
-      opsAfterScope.member.role === 'aftersales',
-    '管理工作台可通过 x-workspace-scope 切换到售后岗位',
-  );
-  check(
-    (
-      await api('ops-after', '/api/workspace', {
-        portal: 'management',
-        scope: 'management',
-      })
-    ).status === 403,
-    '运营+售后兼岗不能通过 x-workspace-scope 提升为管理岗位',
-  );
-  check(
-    (
-      await api('ops-after', '/api/workspace', {
-        portal: 'management',
-        scope: 'bogus-scope',
-      })
-    ).status === 403,
-    '非法 x-workspace-scope 值返回 403',
-  );
+  for (const scope of ['operations', 'aftersales', 'management', 'bogus']) {
+    check(
+      (
+        await api('ops-after', '/api/workspace', {
+          portal: 'management',
+          scope,
+        })
+      ).status === 403,
+      '已取消的 x-workspace-scope=' + scope + ' 被明确拒绝',
+    );
+  }
   const opsAfterLegacy = await ok('ops-after', '/api/workspace', {
     desk: 'aftersales',
   });
   check(
     opsAfterLegacy.member.portal === 'management' &&
-      opsAfterLegacy.member.scope === 'aftersales',
-    '旧请求头 x-workspace-desk: aftersales 映射到管理工作台售后岗位',
+      opsAfterLegacy.member.role === 'operations' &&
+      !('scope' in opsAfterLegacy.member),
+    '旧请求头 x-workspace-desk: aftersales 只映射工作台，不产生售后范围',
   );
-  const scopeTasksOps = await ok('ops-after', '/api/tasks', {
-    portal: 'management',
-    scope: 'operations',
-  });
+  const opsAfterPage = await page('ops-after', '/work/management?scope=aftersales');
   check(
-    scopeTasksOps.tasks.some((t) => t.id === 'd1-task-dual-ops') &&
-      !scopeTasksOps.tasks.some((t) => t.id === 'd1-task-dual-after'),
-    '管理工作台运营岗位范围只读取运营任务',
+    isRedirect(opsAfterPage) &&
+      redirectPath(opsAfterPage) === '/work/management' &&
+      !new URL(opsAfterPage.location, base).searchParams.has('scope'),
+    '兼岗成员 ?scope= 旧链接被安全清洗',
   );
-  const scopeTasksAfter = await ok('ops-after', '/api/tasks', {
-    portal: 'management',
-    scope: 'aftersales',
-  });
+  const opsAfterPageClean = await page('ops-after', '/work/management');
   check(
-    scopeTasksAfter.tasks.some((t) => t.id === 'd1-task-dual-after') &&
-      !scopeTasksAfter.tasks.some((t) => t.id === 'd1-task-dual-ops'),
-    '管理工作台售后岗位范围只读取售后任务',
+    opsAfterPageClean.status === 200 &&
+      !opsAfterPageClean.text.includes('切换岗位范围'),
+    '管理工作台页面不再渲染内部岗位范围切换器',
   );
   check(
-    (
-      await page('ops-after', '/work/management?scope=aftersales')
-    ).status === 200,
-    '管理工作台支持 ?scope=aftersales 岗位切换页面',
+    !opsAfterPageClean.text.includes('/work/operations') &&
+      !opsAfterPageClean.text.includes('/work/aftersales'),
+    '管理工作台页面不暴露运营/售后工作台入口',
+  );
+  const managerPage = await page('manager-finance', '/work/management');
+  check(
+    managerPage.status === 200 && !managerPage.text.includes('切换岗位范围'),
+    '管理岗位页面同样没有内部岗位范围切换器',
   );
 
-  // ------------------------------- 9. members.desks schema stays granular ---
+  // -------------- 9. members storage compat, professional roles, transfers ---
   const created = await api('owner', '/api/team', {
     portal: 'management',
     body: {
       email: 'd1-new-' + randomUUID() + '@example.invalid',
       name: '新兼岗成员',
+      professionRole: 'operations',
       assignedDesks: ['operations', 'aftersales'],
       defaultDesk: 'aftersales',
       region: '全部分部',
@@ -1033,8 +1122,119 @@ try {
       newMember.assignedDesks.length === 2 &&
       newMember.assignedDesks.includes('operations') &&
       newMember.assignedDesks.includes('aftersales') &&
-      newMember.defaultDesk === 'aftersales',
-    '/api/team 仍以五个岗位粒度保存运营+售后授权',
+      newMember.role === 'operations',
+    '/api/team 保留旧岗位能力存储，但不把运营+售后合并成管理岗位',
+  );
+  check(
+    newMember?.defaultDesk === 'management',
+    '旧 default_desk=aftersales 在写入时规范为管理工作台（默认台只有三台）',
+  );
+  const managementRoleMember = await api('owner', '/api/team', {
+    portal: 'management',
+    body: {
+      email: 'd1-manager-' + randomUUID() + '@example.invalid',
+      name: '明确管理成员',
+      professionRole: 'management',
+      assignedDesks: ['management'],
+      defaultDesk: 'management',
+      region: '广州总部',
+      status: 'active',
+      password: 'D1Manager!' + randomUUID(),
+    },
+  });
+  check(
+    managementRoleMember.status === 200 &&
+      managementRoleMember.data.members.find((m) => m.name === '明确管理成员')
+        ?.role === 'management',
+    '管理权限通过显式专业岗位授予，不靠运营/售后映射',
+  );
+  const managerCannotPromote = await api('manager-finance', '/api/team', {
+    portal: 'management',
+    body: {
+      email: 'd1-promote-' + randomUUID() + '@example.invalid',
+      name: '越权提升',
+      professionRole: 'management',
+      assignedDesks: ['management'],
+      defaultDesk: 'management',
+      region: '广州总部',
+      status: 'active',
+      password: 'D1Promote!' + randomUUID(),
+    },
+  });
+  check(
+    managerCannotPromote.status === 403,
+    '普通管理不能把协作成员提升为公司管理岗位（仅 owner）',
+  );
+  // Transfer/demotion: explicit role change from management to operations,
+  // session revoked and before/after values audited.
+  const managerRow = (
+    await ok('owner', '/api/team', { portal: 'management' })
+  ).members.find((m) => m.email === rows['manager-finance'].email);
+  const demoted = await api('owner', '/api/team', {
+    portal: 'management',
+    body: {
+      ...managerRow,
+      professionRole: 'operations',
+      assignedDesks: ['operations'],
+      defaultDesk: 'management',
+    },
+  });
+  const demotedRow = demoted.data.members?.find(
+    (m) => m.id === rows['manager-finance'].id,
+  );
+  check(
+    demoted.status === 200 &&
+      demotedRow?.role === 'operations' &&
+      demotedRow?.assignedDesks.length === 1 &&
+      demotedRow?.assignedDesks[0] === 'operations',
+    'owner 可把管理岗位转为运营岗位并降权',
+  );
+  const auditDb = openSqlite(database);
+  const auditRow = auditDb
+    .prepare(
+      "SELECT data FROM member_audit WHERE workspace_id=? AND actor_id=? AND json_extract(data,'$.target')=? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    )
+    .get(workspace, rows.owner.id, rows['manager-finance'].id);
+  auditDb.close();
+  let auditData = {};
+  try {
+    auditData = JSON.parse(auditRow?.data || '{}');
+  } catch {}
+  check(
+    auditData.roleBefore === 'management' &&
+      auditData.roleAfter === 'operations' &&
+      Array.isArray(auditData.desksBefore) &&
+      auditData.desksBefore.includes('management') &&
+      Array.isArray(auditData.desksAfter) &&
+      auditData.desksAfter.includes('operations'),
+    '转岗降权在 member_audit 记录变更前后角色与授权',
+  );
+  check(
+    (await api('manager-finance', '/api/team', { portal: 'management' }))
+      .status === 401,
+    '降权立即撤销原管理会话',
+  );
+  const demotedLogin = await loginCookie('manager-finance');
+  check(
+    demotedLogin.status === 200 &&
+      demotedLogin.data.redirectTo === '/work/management',
+    '降权后的原管理账号重新登录只进入管理工作台协作',
+  );
+  const demotedTeam = await fetch(base + '/api/team', {
+    headers: {
+      Cookie: demotedLogin.cookie,
+      'x-workspace-portal': 'management',
+    },
+  });
+  check(
+    demotedTeam.status === 403,
+    '降权后重新登录仍不能访问人员管理',
+  );
+  check(
+    created.status === 200 &&
+      !created.data.members.find((m) => m.name === '新兼岗成员')?.assignedDesks
+        .includes('management'),
+    '运营/售后专业岗位保存后不自动获得管理岗位授权',
   );
 
   console.log(JSON.stringify({ passed, database, port }));

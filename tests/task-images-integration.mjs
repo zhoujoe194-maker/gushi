@@ -247,8 +247,8 @@ check(
   '兼岗但非承办人不能查看任务图片（V2 边界）',
 );
 check(
-  (await request('finance', url + '?desk=operations')).status === 403,
-  '伪造工作台参数不能扩大授权',
+  (await request('finance', url + '?desk=operations')).status === 404,
+  '伪造旧工作台参数不扩大授权（图片仍不可读）',
 );
 await denied(
   'ops',

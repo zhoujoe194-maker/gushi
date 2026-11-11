@@ -114,9 +114,22 @@ for (const user of Object.values(users)) {
 check((await request(null)).status === 401, '匿名不能查看考核资料');
 for (const user of ['ops', 'finance'])
   check((await request(user)).status === 403, user + ' 不能访问销售考核');
+const dualOps = await request('dual', '/api/sales?month=2026-09', undefined, 'operations');
 check(
-  (await request('dual', '/api/sales', undefined, 'operations')).status === 403,
-  '兼岗人员切到运营台不能读取销售考核',
+  dualOps.status === 200 &&
+    dualOps.body.member.role === 'sales' &&
+    dualOps.body.records.every((r) => r.memberId === users.dual.id),
+  '兼岗销售在管理工作台仍按真实销售身份只读本人考核',
+);
+const dualOther = await request(
+  'dual',
+  '/api/sales?month=2026-09&memberId=' + users.sales.id,
+  undefined,
+  'operations',
+);
+check(
+  [403, 404].includes(dualOther.status),
+  '兼岗销售不能读取同事考核',
 );
 check(
   (

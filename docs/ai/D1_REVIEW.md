@@ -27,3 +27,17 @@ DSH工具的文件变化快照包含Codex同时执行的构建产物，不能归
 
 ## 下一轮与协作约定
 建议用户批准后让DSH在独立worktree定向修复并补上述用例，由Codex复核diff、权限与实际测试结果后集成；本次不自动修复。任务应包含基线、白名单、禁止项、验收测试和交接格式。Codex负责范围/冲突协调与最终判断，不能把DSH报告直接当验收。
+
+## 2026-11-12 D1-RECTIFY 处理结果
+
+用户已批准整改并要求由Codex验收。本次整改不是D1的增量补丁，而是取代旧D1“五粒度授权作为内部岗位范围切换”的方案：
+
+- P2 默认范围/多授权身份：取消内部scope概念。`inPortal()`不再按scope改写角色；账号在三个工作台内始终按真实专业岗位鉴权。多授权账号的运营/售后任务与消息按持久授权合并可读，不依赖scope切换。
+- P2 owner财务边界：`canFinance()`同时要求真实财务能力（owner/finance岗位或finance授权）与实际处于finance工作台；owner在管理工作台执行收款/核销/合同审核等财务写操作返回403，在财务工作台可执行。动作测试见d1-portals第7b节。
+- P2 人员转岗锁死：人员面板重写为三个工作台授权 + 独立专业岗位 + 管理台内任务协作能力；支持转岗/降权，服务端记录`member_audit`前后role/desks/portals/defaultDesk。仅owner可授予或取消管理岗位，普通管理不能把协作成员提升为管理员。
+- P3 X-Workspace-Portal：只接受三个工作台；旧`X-Workspace-Desk`只映射工作台；`X-Workspace-Scope`明确403。
+- P3 审计：`member_audit`新增role/desks/portals/defaultDesk的before/after值。
+
+验证命令与结果见DEVELOPMENT_STATUS.md和交接材料；由Codex复核diff后决定验收与推送。
+
+整改实现提交：代码 `16de17e8e25e623e0f5fabe2395b071731ad3f8a`，测试 `398699952a432da88c767f9f9433d7189fd9ac38`。Codex待复核。

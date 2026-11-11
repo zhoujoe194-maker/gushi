@@ -1,5 +1,7 @@
 # GushiOS V2 阶段 D1：三工作台入口与操作体验整合
 
+> **历史文档（已被取代）**：2026-11-12 用户批准 **D1-RECTIFY**，取消 D1 中“五个粒度授权作为管理台内部岗位范围切换、保留五类 scope”的设计。现行方案只有 sales/management/finance 三个工作台，operations/aftersales 仅作为专业岗位能力保留，无默认台与 scope 切换；旧 `members.desks`/`default_desk` 原值保留并由读取适配映射。本文保留为历史记录，与现行实现冲突处以 `docs/ai/DECISIONS.md` 第 9 条和 `docs/ai/D1_REVIEW.md` 的 D1-RECTIFY 处理结果为准。
+
 ## 范围与基线
 
 - 基线：`codex/gushios-v2` 的 `0d4bf7b6dc46fef506a78de964f99ee581e36e3e`（阶段 D0）。开始工作时工作区干净，只在本分支直接实施并提交一个独立 D1 commit。

@@ -12,6 +12,7 @@ RUN_LOCAL_TESTS=1 node tests/v2-outcomes.mjs
 RUN_LOCAL_TESTS=1 node tests/v2-cashflow.mjs
 node tests/cash-forecast-unit.mjs
 RUN_LOCAL_TESTS=1 QA_D1_PORT=5220 node tests/d1-portals.mjs
+RUN_LOCAL_TESTS=1 QA_RECTIFY_PORT=5540 node tests/d1-rectify.mjs
 RUN_LOCAL_TESTS=1 QA_DEPLOY_PORT=5491 node tests/deployment-smoke.mjs
 RUN_LOCAL_TESTS=1 QA_BASE_PORT=5210 node tests/release-checks.mjs
 ```

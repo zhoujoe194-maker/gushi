@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|---|---|
 | CTX-01 | 上下文体系 | 当前Codex文档窗口 | codex/gushios-v2，当前独占checkout | AGENTS.md、docs/ai/*.md | D1基线98774cd | completed | 文档静态检查；提交用 git log -1 -- docs/ai 查询；本地提交，不自动推送 |
 | D1-REVIEW | 独立复核D1 | Codex核验、DSH只读审查 | codex/gushios-v2；DSH只读共享checkout | Codex仅docs/ai报告及交接；DSH无写权限 | 0f76484 | completed | 见D1_REVIEW.md；发现问题待修复，不表示D1验收通过 |
-| D1-RECTIFY | 三工作台-only整改，取消operations/aftersales工作台、默认台与scope切换；修复D1审查P2/P3 | DSH（唯一代码写入者） | codex/gushios-v2，当前唯一checkout；基线aa921d1 | app/、tests/、docs/ai、README、部署说明本整改所需文件；无schema变更 | aa921d1；用户授权整改并最终由Codex验收 | completed | 代码16de17e、测试3986999；本次tsc/构建/739 release/99 D0财务/26计算/83浏览器通过；待Codex复核推送，未部署未合并main |
+| D1-RECTIFY | 三工作台-only整改，取消operations/aftersales工作台、默认台与scope切换；修复D1审查P2/P3 | DSH（唯一代码写入者） | codex/gushios-v2，当前唯一checkout；基线aa921d1 | app/、tests/、docs/ai、README、部署说明本整改所需文件；无schema变更 | aa921d1；用户授权整改并最终由Codex验收 | completed | 代码16de17e、测试3986999、浏览器断言f0cf06f；本次tsc/构建/739 release/99 D0财务/26计算/87浏览器通过；待Codex复核推送，未部署未合并main |
 
 ## 推荐职责（不是自动分配的新任务）
 产品窗口：需求、验收标准与决策草案；前端：导航、页面、手机交互；后端：API、权限与模型；财务：现金流和收付口径；测试：独立复现与审查；集成：登记任务、合入V2、统一更新上下文。

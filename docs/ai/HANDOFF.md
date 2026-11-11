@@ -1,7 +1,7 @@
 # 快速交接
 
 ## 当前版本
-2026-11-12，分支 `codex/gushios-v2`，D1-RECTIFY 已完成并提交等待 Codex 验收。基线 `aa921d1`；代码提交 `16de17e8e25e623e0f5fabe2395b071731ad3f8a`；测试提交 `398699952a432da88c767f9f9433d7189fd9ac38`；文档提交用 `git log -1 --format=%H -- docs/ai/HANDOFF.md` 查询。未推送、未部署、未合并 main。
+2026-11-12，分支 `codex/gushios-v2`，D1-RECTIFY 已完成并提交等待 Codex 验收。基线 `aa921d1`；代码提交 `16de17e8e25e623e0f5fabe2395b071731ad3f8a`；测试提交 `398699952a432da88c767f9f9433d7189fd9ac38`；浏览器断言补充 `f0cf06fc2b6d6e7baa952b85f3a7208d5c9cc63f`；文档提交用 `git log -1 --format=%H -- docs/ai/HANDOFF.md` 查询。未推送、未部署、未合并 main。
 
 ## 本次任务与结论（D1-RECTIFY）
 用户批准整改并最终由 Codex 验收。本任务**取代**旧 D1“五粒度授权作为管理台内部岗位范围切换、保留五类 scope”的方案，不只是隐藏导航：
@@ -21,7 +21,7 @@
 - `RUN_LOCAL_TESTS=1 QA_BASE_PORT=5530 node tests/release-checks.mjs`：**739 通过**，独立临时 SQLite/端口；含 access 65、auth 53、business 112、task-images 46、commercial 40、messages 45、groups 54、sales 92、setup 40、deployment 51、d1-portals 113、d1-rectify 22、sales-migration 6。日志在 `/private/tmp/d1-rectify-release-final.log` 与 `work/release-checks/run-MVn5Cv/`。
 - `RUN_LOCAL_TESTS=1 V2_QA_PORT=5273 node tests/v2-cashflow.mjs`：99 通过（原 D0 财务回归）。
 - `node tests/cash-forecast-unit.mjs`：26 通过。
-- 隔离浏览器：先 `node tests/d1-browser-setup.mjs`（5 项，模拟库只读复制到 `/private/tmp/gushi-d1-browser/company.sqlite`），再 `QA_PORT=5406 QA_SCREENSHOT_DIR=/private/tmp/gushi-d1-browser/screenshots node tests/d1-portals-browser.mjs`：**83 通过、0 失败、0 页面/脚本错误**（销售/运营/售后/管理/财务/多工作台入口、旧链接、四档视口）。日志 `/private/tmp/d1-rectify-browser-final.log`。
+- 隔离浏览器：先 `node tests/d1-browser-setup.mjs`（5 项，模拟库只读复制到 `/private/tmp/gushi-d1-browser/company.sqlite`），再 `QA_PORT=5406 QA_SCREENSHOT_DIR=/private/tmp/gushi-d1-browser/screenshots node tests/d1-portals-browser.mjs`：**87 通过、0 失败、0 页面/脚本错误**（销售/运营/售后/管理/财务/多工作台入口、旧链接、无岗位范围切换、四档视口）。日志 `/private/tmp/d1-rectify-browser-final3.log`。
 - 未运行/未宣称：v2-foundation、v2-lightweight、v2-outcomes 未单独重跑（release 覆盖相近流程但不等于同脚本）；真实员工/手机与财务对账未验收；未部署、未推送、未合并 main；未打开真实公司库。截图在 `/private/tmp/gushi-d1-browser/screenshots`，未提交。
 
 ## 供 Codex 复核的要点

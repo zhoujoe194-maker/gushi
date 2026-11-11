@@ -356,7 +356,8 @@ try {
     try {
       await login(page, accounts.operations.email);
       check(/^\/work\/management$/.test(pathOf(page)), '运营账号登录后进入管理工作台（当前 ' + pathOf(page) + '）');
-      check(await pageHas(page, [/运营/]), '管理工作台显示运营岗位范围');
+      check(await pageHas(page, [/运营/]), '管理工作台显示真实运营岗位');
+      check(!(await pageHas(page, [/切换岗位范围/])), '运营账号没有内部岗位范围切换器');
       const nav = (await navLabels(page)).join(' | ');
       const forbidden = [/项目协同/, /项目管理/, /人员管理/, /工资和固定费用/, /工资费用/, /合同与票款/, /现金流/, /经营总览/];
       check(!hasAny(nav, forbidden), '运营台导航无项目/合同/财务/工资/人员入口');
@@ -392,7 +393,8 @@ try {
     try {
       await login(page, accounts.aftersales.email);
       check(/^\/work\/management$/.test(pathOf(page)), '售后账号登录后进入管理工作台（当前 ' + pathOf(page) + '）');
-      check(await pageHas(page, [/售后/]), '管理工作台显示售后岗位范围');
+      check(await pageHas(page, [/售后/]), '管理工作台显示真实售后岗位');
+      check(!(await pageHas(page, [/切换岗位范围/])), '售后账号没有内部岗位范围切换器');
       const nav = (await navLabels(page)).join(' | ');
       const forbidden = [/项目协同/, /项目管理/, /人员管理/, /工资和固定费用/, /工资费用/, /合同与票款/, /现金流/, /经营总览/];
       check(!hasAny(nav, forbidden), '售后台导航无项目/合同/财务/工资/人员入口');
@@ -440,6 +442,15 @@ try {
       await page.waitForTimeout(700);
       const membersText = await bodyText(page);
       check(/人员管理|成员|账号|工作台/.test(membersText), '管理台可打开人员管理页面');
+      check(
+        /专业岗位/.test(membersText) &&
+          !/切换岗位范围|运营工作台|售后工作台/.test(membersText),
+        '人员管理展示专业岗位且不再出现内部岗位范围编辑',
+      );
+      check(
+        !/运营工作台|售后工作台/.test(membersText),
+        '人员管理只展示销售/管理/财务三个工作台',
+      );
       await page.screenshot({ path: resolve(screenshotDir, 'management-members.png') });
     } finally {
       await context.close();
